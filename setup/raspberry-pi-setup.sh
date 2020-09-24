@@ -69,7 +69,7 @@ sudo apt-get install -y screen            # something that allows us to use mult
 ## screen -r name                     -> reconnect to the session with name "name"
 ## screen -ls                         -> list all opened sessions
 
-sudo apt-get install -y libf77blas        # a numeric library required for numpy
+sudo apt-get install -y libatlas-base-dev       # a numeric library required for numpy
 
 ## UPGRADE PIP AND INSTALL JUPYTER NOTEBOOK ##
 
@@ -98,4 +98,4 @@ sudo rabbitmq-plugins enable rabbitmq_management
 jupyter notebook --NotebookApp.allow_remote_access=1
 
 ## IF USING IPV6 ##
-# socat TCP6-LISTEN:8888,fork TCP4:127.0.0.1:8888
+socat TCP6-LISTEN:8889,fork TCP4:127.0.0.1:8888
