@@ -1,5 +1,0 @@
-websocket-client
-pandas
-sqlalchemy
-mysqlclient
-pika
