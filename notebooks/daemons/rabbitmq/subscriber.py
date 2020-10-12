@@ -24,7 +24,34 @@ class Subscriber:
         self._subscriber_tag = None
     
     def log(self, *args, **kwargs):
-        print(*args, **kwargs)
+        #print(*args, **kwargs)
+        pass
+    
+    def __setitem__(self, key, value):
+        key = key.lower()
+        if key == 'exchange':
+            self.exchange = value
+        elif key == 'exchange_type':
+            self.exchange_type = value
+        elif key == 'queue':
+            self.queue = value
+        elif key == 'routing_key':
+            self.routing_key = value
+        else:
+            raise NotImplementedError('Could not set {} property on object {}.'.format(key, type(self)))
+    
+    def __getitem__(self, key):
+        key = key.lower()
+        if key == 'exchange':
+            return self.exchange
+        elif key == 'exchange_type':
+            return self.exchange_type
+        elif key == 'queue':
+            return self.queue
+        elif key == 'routing_key':
+            return self.routing_key
+        else:
+            raise NotImplementedError('Could not find {} property on object {}.'.format(key, type(self)))
     
     def connect(self):
         if self._connection is None:
@@ -111,13 +138,17 @@ class Subscriber:
         self.log('Subscriber was canceled remotely. Shutting down: {}.'.format(method_frame))
         if self._channel:
             self._channel.close()
-
+            
+    def on_message_callback(self, basic_delivery, properties, body):
+        self.log('You should overload the on_message_callback callback.')
+    
     def on_message(self, _unused_channel, basic_delivery, properties, body):
         self.log('Received message # {} from {}: {}'.format(
             basic_delivery.delivery_tag,
             properties.app_id,
             body
         ))
+        self.on_message_callback(basic_delivery, properties, body)
         self._channel.basic_ack(basic_delivery.delivery_tag)
 
     def run(self):
