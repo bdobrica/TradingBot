@@ -5,9 +5,9 @@ import json
 import pandas as pd
 from rabbitmq import Subscriber
 from config import app_config
+from db import mk_schema
 
-from sqlalchemy import create_engine, MetaData, Table, Column, Index
-from sqlalchemy.types import BigInteger, Float, String, DateTime, Float
+from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.expression import Insert
 
@@ -17,18 +17,7 @@ def _prefix_insert_with_ignore(insert, compiler, **kwords):
     return compiler.visit_insert(insert.prefix_with('IGNORE'), **kwords)
 
 meta = MetaData()
-table = Table(
-    'transactions', meta, 
-    Column('id', BigInteger, primary_key = True),
-    Column('price', Float), 
-    Column('symbol', String(32)),
-    Column('time', DateTime),
-    Column('stamp', BigInteger),
-    Column('volume', Float)
-)
-_ = Index('symbol', table.c.symbol)
-_ = Index('symbol_stamp', table.c.symbol, table.c.stamp, unique = True)
-
+mk_schema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
 
