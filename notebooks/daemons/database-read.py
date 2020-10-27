@@ -50,7 +50,8 @@ class DbSubscriber(Subscriber):
             budget\
         order by\
             stamp desc\
-        limit 1;', con = engine)
+        limit 1;',
+            con = engine)
         portfolio = pd.read_sql('select\
             symbol,\
             sum(commission) as commission,\
@@ -114,22 +115,8 @@ class DbSubscriber(Subscriber):
             budget\
         order by\
             stamp desc\
-        limit 1;', con = engine)
-        symbols = pd.read_sql('select\
-            symbol\
-        from\
-            transactions\
-        where\
-            stamp >= %(begin)s and\
-            stamp < %(end)s\
-        group by\
-            symbol;',
-            con = engine,
-            params = {
-                'begin': begin_stamp,
-                'end': end_stamp
-            }
-        )
+        limit 1;',
+            con = engine)
         transactions = pd.read_sql('select\
             id,\
             price,\
