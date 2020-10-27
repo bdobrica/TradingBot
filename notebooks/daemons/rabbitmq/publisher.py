@@ -70,11 +70,11 @@ class Publisher:
             self._channel.queue_declare(
                 queue = self.queue
             )
-            self._channel.queue_bind(
-                self.queue,
-                self.exchange,
-                routing_key = self.routing_key
-            )
+            #self._channel.queue_bind(
+            #    self.queue,
+            #    self.exchange,
+            #    routing_key = self.routing_key
+            #)
             self._channel.confirm_delivery()
     
     def disconnect(self):
