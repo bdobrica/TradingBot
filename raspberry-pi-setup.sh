@@ -95,6 +95,23 @@ sudo rabbitmq-plugins enable rabbitmq_management
 # grant all privileges on *.* to 'root'@'localhost' identified by 'password';
 # flush privileges;
 
+## REQUIRED FOR MATPLOTLIB ##
+sudo apt-get install libopenjp2-7 libtiff5
+
+## INSTALL TENSORFLOW ##
+sudo pip3 install keras tensorflow
+sudo pip3 uninstall tensorflow
+sudo apt-get install gfortran
+sudo apt-get install libhdf5-dev libc-ares-dev libeigen3-dev
+sudo apt-get install libatlas-base-dev libopenblas-dev libblas-dev
+sudo apt-get install liblapack-dev cython
+sudo pip3 install pybind11
+sudo pip3 install h5py
+sudo pip3 install --upgrade setuptools
+sudo pip3 install gdown
+sudo gdown https://drive.google.com/uc?id=11mujzVaFqa7R1_lB7q0kVPW22Ol51MPg
+sudo -H pip3 install tensorflow-2.2.0-cp37-cp37m-linux_armv7l.whl
+
 jupyter notebook --NotebookApp.allow_remote_access=1
 
 ## IF USING IPV6 ##
