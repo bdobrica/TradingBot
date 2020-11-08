@@ -6,12 +6,12 @@ import pandas as pd
 from rabbitmq import Subscriber
 from rabbitmq import Publisher
 from config import app_config
-from db import mk_schema, OrderStatus
+from db import DatabaseSchema, OrderStatus
 
 from sqlalchemy import create_engine, MetaData
 
 meta = MetaData()
-mk_schema(meta)
+db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
 
@@ -170,9 +170,27 @@ class DbSubscriber(Subscriber):
                 'status': [OrderStatus.PENDING, OrderStatus.PARTIAL]
             }
         )
+        transactions = pd.read_sql('select\
+            id,\
+            price,\
+            symbol,\
+            stamp,\
+            volume\
+        from\
+            transactions\
+        where\
+            stamp >= %(begin)s and\
+            stamp < %(end)s;',
+            con = engine,
+            params = {
+                'begin': begin_stamp,
+                'end': end_stamp
+            }
+        )
         message = {
             'stamp': current_stamp,
-            'orders': orders.to_dict()
+            'orders': orders.to_dict(),
+            'transactions': transactions.to_dict()
         }
         self.publisher['routing_key'] = 'requested.orders'
         self.publisher.publish(message)

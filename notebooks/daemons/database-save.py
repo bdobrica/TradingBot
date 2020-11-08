@@ -5,7 +5,7 @@ import json
 import pandas as pd
 from rabbitmq import Subscriber
 from config import app_config
-from db import mk_schema
+from db import DatabaseSchema
 
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.compiler import compiles
@@ -17,7 +17,7 @@ def _prefix_insert_with_ignore(insert, compiler, **kwords):
     return compiler.visit_insert(insert.prefix_with('IGNORE'), **kwords)
 
 meta = MetaData()
-mk_schema(meta)
+db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
 
