@@ -13,7 +13,7 @@ class DatabaseSchema:
     ORDERS = 'orders'
     USED = 'used'
     
-    def init(self, meta):
+    def __init__(self, meta):
         # the `transactions` table, we've played with this before
         self.transactions = Table(
             self.TRANSACTIONS, meta, 
@@ -24,8 +24,8 @@ class DatabaseSchema:
             Column('stamp', BigInteger),
             Column('volume', Float)
         )
-        _ = Index('symbol', transactions.c.symbol)
-        _ = Index('symbol_stamp', transactions.c.symbol, transactions.c.stamp, unique = True)
+        _ = Index('symbol', self.transactions.c.symbol)
+        _ = Index('symbol_stamp', self.transactions.c.symbol, self.transactions.c.stamp, unique = True)
 
         # the `budget` table; the current budget is the last line from the table (time wise)
         self.budget = Table(
@@ -48,8 +48,8 @@ class DatabaseSchema:
             Column('stamp', BigInteger),
             Column('volume', Float)
         )
-        _ = Index('symbol', portfolio.c.symbol)
-        _ = Index('symbol_stamp', portfolio.c.symbol, portfolio.c.stamp, unique = True)
+        _ = Index('symbol', self.portfolio.c.symbol)
+        _ = Index('symbol_stamp', self.portfolio.c.symbol, self.portfolio.c.stamp, unique = True)
 
         # the `orders` table: this is kind of a `transactions` table, but with pending orders
         self.orders = Table(
@@ -62,9 +62,9 @@ class DatabaseSchema:
             Column('volume', Float),
             Column('status', Integer)
         )
-        _ = Index('symbol', orders.c.symbol)
-        _ = Index('status', orders.c.status)
-        _ = Index('symbol_stamp', orders.c.symbol, orders.c.stamp, unique = True)
+        _ = Index('symbol', self.orders.c.symbol)
+        _ = Index('status', self.orders.c.status)
+        _ = Index('symbol_stamp', self.orders.c.symbol, self.orders.c.stamp, unique = True)
 
         # the `used_log` table: this will keep only the `id`s and used volume for transactions used to fulfil orders
         self.used = Table(
@@ -73,3 +73,4 @@ class DatabaseSchema:
             Column('transaction', BigInteger),
             Column('stamp', BigInteger),
             Column('volume', Float)
+        )
