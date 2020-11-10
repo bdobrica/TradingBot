@@ -370,16 +370,16 @@ class BrokerSubscriber(Subscriber):
     
     def on_message_callback(self, basic_delivery, properties, body):
         body_object = json.loads(body)
-        if 'stamp' not in body_object:
+        if 'lookahead' not in body_object:
             return
-        check_stamp = body_object['stamp']
+        lookahead = body_object['lookahead']
         
         if self._is_locked():
             return
         
         self._lock()
         
-        orders = self._get_active_orders(app_config.orders.lookahead)
+        orders = self._get_active_orders(lookahead)
         
         if orders[0].shape[0] < 1:
             self._unlock()
