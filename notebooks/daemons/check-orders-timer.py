@@ -4,8 +4,8 @@ from rabbitmq import Publisher
 
 params = pika.ConnectionParameters(host='localhost')
 publisher = Publisher(params)
-publisher['queue'] = 'database'
-publisher['routing_key'] = 'database.read'
+publisher['queue'] = 'broker'
+publisher['routing_key'] = 'broker.fulfil'
 publisher.publish({
     'type': 'orders',
     'params': {
