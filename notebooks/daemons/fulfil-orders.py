@@ -151,6 +151,16 @@ class BrokerSubscriber(Subscriber):
         limit 1;'.format(tables = db_schema),
             con = engine
         )
+        if budget.shape[0] == 0:
+            budget = pd.DataFrame(columns = [
+                'amount',
+                'stamp'
+            ])
+            budget = budget.append({
+                'amount': app_config.broker.budget,
+                'stamp': int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+            }, ignore_index = True)
+            
         return (
             orders,
             transactions,
