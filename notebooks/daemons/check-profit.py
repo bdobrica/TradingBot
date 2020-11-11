@@ -6,12 +6,12 @@ import pandas as pd
 from rabbitmq import Subscriber
 from rabbitmq import Publisher
 from config import app_config
-from db import mk_schema, OrderStatus
+from db import DatabaseSchema, OrderStatus
 
 from sqlalchemy import create_engine, MetaData
 
 meta = MetaData()
-mk_schema(meta)
+db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
 
@@ -27,6 +27,29 @@ class CheckProfitSubscriber(Subscriber):
             return self.publisher
         else:
             super().__getitem__(key)
+    
+    def _margin(self):
+        margin_type = 'fixed'
+        margin_value = 0.0        
+        if isinstance(app_config.sell.margin, str):
+            if app_config.sell.margin[-1] == '%':
+                try:
+                    margin_value = 0.01 * float(app_config.sell.margin[:-1])
+                    margin_type = 'percent'
+                except:
+                    pass
+            else:
+                try:
+                    margin_value = float(app_config.sell.margin)
+                except:
+                    pass
+        elif isinstance(app_config.sell.margin, (int, float)):
+            margin_value = float(app_config.sell.margin)
+        
+        return (
+            margin_value,
+            margin_type
+        )
     
     def _make_sell_order(self, orders):
         current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
@@ -60,6 +83,7 @@ class CheckProfitSubscriber(Subscriber):
         if portfolio.shape[0] == 0:
             return
         
+        margin_value, margin_type = self._margin()
         orders = pd.DataFrame(columns = ['symbol', 'volume'])
         for _, row in portfolio.iterrows():
             symbol, commission, buy_value, volume, buy_stamp = row
@@ -75,7 +99,8 @@ class CheckProfitSubscriber(Subscriber):
             sales = sell_prices * volum
             margin = (sales - cogs) / sales
             
-            if margin >= app_config.sell.margin:
+            if (margin_type == 'fixed' and sales - cogs >= margin_value) or \
+            (margin_type == 'percent' and margin >= margin_value):
                 orders = orders.append({
                     'symbol': symbol,
                     'volume': volume
