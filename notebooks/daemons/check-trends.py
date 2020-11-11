@@ -6,17 +6,12 @@ import pandas as pd
 from rabbitmq import Subscriber
 from rabbitmq import Publisher
 from config import app_config
-from db import mk_schema, OrderStatus
+from db import DatabaseSchema, OrderStatus
 from sqlalchemy import create_engine, MetaData
-
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers.experimental import preprocessing
 import numpy as np
 
 meta = MetaData()
-mk_schema(meta)
+db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
 
@@ -32,6 +27,29 @@ class CheckTrendsSubscriber(Subscriber):
             return self.publisher
         else:
             super().__getitem__(key)
+            
+    def _trend(self):
+        trend_type = 'fixed'
+        trend_value = 0.0        
+        if isinstance(app_config.buy.trend, str):
+            if app_config.buy.trend[-1] == '%':
+                try:
+                    trend_value = 0.01 * float(app_config.buy.trend[:-1])
+                    trend_type = 'percent'
+                except:
+                    pass
+            else:
+                try:
+                    trend_value = float(app_config.buy.trend)
+                except:
+                    pass
+        elif isinstance(app_config.buy.trend, (int, float)):
+            trend_value = float(app_config.buy.trend)
+        
+        return (
+            trend_value,
+            trend_type
+        )
     
     def _make_buy_order(self, orders):
         current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
@@ -51,44 +69,40 @@ class CheckTrendsSubscriber(Subscriber):
         features[:,0] /= 3600 * 1000
         # extract the outputs
         prices = transactions['price'].values
-        # use a tensorflow normalizer for the inputs
-        normalizer = preprocessing.Normalization(input_shape = [2,])
-        normalizer.adapt(features)
-        # as models work best with small number, outputs will also be normalized
-        mu_price = np.mean(prices)
-        sigma_price = np.mean(prices)
-        # build a linear regression model
-        model = tf.keras.Sequential([
-            normalizer,
-            layers.Dense(1, activation = 'linear'),
-            layers.Lambda(lambda output : output * sigma_price + mu_price)
-        ])
-        # choose an optimizer and a loss
-        model.compile(
-            optimizer='adam',
-            loss='mean_absolute_error'
+        X = np.concatenate([np.ones((features.shape[0],1)), features], axis = 1)
+        y = prices
+        # compute the linear regression parameters from the normal form
+        theta = np.dot(
+            np.linalg.pinv(np.dot(X.transpose(), X)),
+            np.dot(X.transpose(), y)
         )
-        # fit the model
-        model.fit(
-            features,
-            prices,
-            validation_split = 0.2,
-            epochs = 5,
-            verbose = 0
+        # compute the edge prices based on model
+        predicted = np.dot(
+            np.array([[ 1, features[ 0,0], 1],
+                      [ 1, features[-1,0], 1]]),
+            theta)
+        # compute the trend as the margin on item = (sales - cogs) / sales
+        absolute_trend = predicted[1] - predicted[0]
+        relative_trend = (predicted[1] - predicted[0]) / predicted[1]
+
+        return (
+            absolute_trend,
+            relative_trend
         )
-        # evaluate the trend
-        predicted = model.predict([
-            [features[0,0], 0.0],
-            [features[-1,0], 0.0]
-        ]).squeeze()
-        # compute the slope of the trend
-        trend = (predicted[1] - predicted[0]) / (features[-1,0] - features[0,0])
-        
-        return trend
         
     def _distribute_budget(self, orders, budget):
         amount = budget['amount']
+        if orders.shape[0]:
+            return
+        max_trend = orders['trend'].max()
+        orders = orders[orders['trend'] == max_trend]
+        orders = orders.iloc[0:1]
+        volume = int(amount / orders['price'][0])
+
+        orders.drop(columns = ['price', 'trend'], inplace = True)
+        orders['price'][0] = -volume
         
+        return orders
     
     def on_message_callback(self, basic_delivery, properties, body):
         body_object = json.loads(body)
@@ -111,18 +125,38 @@ class CheckTrendsSubscriber(Subscriber):
         if transactions.shape[0] == 0:
             return
         
+        trend_value, trend_type = self._trend()
+        
         orders = pd.DataFrame(columns = ['symbol', 'volume', 'trend'])
         for symbol in transactions['symbol'].unique():
             symbol_transactions = transactions[transactions['symbol'] == symbol]
-            trend = self._compute_trend(symbol_transactions)
-            orders = orders.append({
-                'symbol': symbol,
-                'volume': 0,
-                'trend': trend
-            }, ignore_index = True)
+            if symbol_transactions.shape[0] < 3:
+                continue
+            
+            price = np.dot(
+                symbol_transactions['price'].values,
+                symbol_transactions['volume'].values
+            ) / np.sum(symbol_transactions['volume'].values)
+            
+            absolute_trend, relative_trend = self._compute_trend(symbol_transactions)
+            
+            if trend_type == 'fixed' and absolute_trend > trend_value:
+                orders = orders.append({
+                    'symbol': symbol,
+                    'volume': 0,
+                    'price': price,
+                    'trend': absolute_trend
+                }, ignore_index = True)
+            if trend_type == 'percent' and relative_trend > trend_value:
+                orders = orders.append({
+                    'symbol': symbol,
+                    'volume': 0,
+                    'price': price,
+                    'trend': relative_trend
+                }, ignore_index = True)
         
-        self._distribute_budget(orders, budget)
-        orders = orders[orders['volume'] > 0]
+        orders = self._distribute_budget(orders, budget)
+        orders = orders[orders['volume'] < 0]
         if orders.shape[0] > 0:
             self._make_buy_orders(orders)
             
