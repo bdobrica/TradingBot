@@ -380,6 +380,9 @@ class BrokerSubscriber(Subscriber):
     
     def on_message_callback(self, basic_delivery, properties, body):
         body_object = json.loads(body)
+        if 'stamp' not in body_object:
+            return
+        check_stamp = body_object['stamp']
         if 'lookahead' not in body_object:
             return
         lookahead = body_object['lookahead']
@@ -405,8 +408,8 @@ class BrokerSubscriber(Subscriber):
         
 params = pika.ConnectionParameters(host='localhost')
 subscriber = BrokerSubscriber(params)
-subscriber['queue'] = 'broker'
-subscriber['routing_key'] = 'broker.fulfil'
+subscriber['queue'] = 'orders'
+subscriber['routing_key'] = 'orders.make'
 
 if __name__ == '__main__':
     subscriber.run()
