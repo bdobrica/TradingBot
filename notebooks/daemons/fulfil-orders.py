@@ -9,6 +9,13 @@ from config import app_config
 from db import DatabaseSchema, OrderStatus
 
 from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.expression import Insert
+
+# adds the word IGNORE after INSERT in sqlalchemy
+@compiles(Insert)
+def _prefix_insert_with_ignore(insert, compiler, **kwords):
+    return compiler.visit_insert(insert.prefix_with('IGNORE'), **kwords)
 
 meta = MetaData()
 db_schema = DatabaseSchema(meta)
@@ -102,7 +109,7 @@ class BrokerSubscriber(Subscriber):
             volume,\
             status\
         from\
-            {tables.PORTFOLIO}\
+            {tables.ORDERS}\
         where\
             stamp <= %(stamp)s and\
             status in %(status)s;'.format(tables = db_schema),
@@ -157,7 +164,7 @@ class BrokerSubscriber(Subscriber):
                 'stamp'
             ])
             budget = budget.append({
-                'amount': app_config.broker.budget,
+                'amount': float(app_config.broker.budget),
                 'stamp': int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
             }, ignore_index = True)
             
@@ -215,8 +222,8 @@ class BrokerSubscriber(Subscriber):
         delta_budget = 0
         # the total commission paid to fulfil current orders
         commissions = 0
-        # the list of order IDs for orders that will remain pending
-        pending_orders = []
+        # the list of order IDs for orders that will be partially processed
+        partial_orders = []
         # the list of order IDs for orders that are completely fulfiled
         fulfiled_orders = []
         
@@ -314,7 +321,7 @@ class BrokerSubscriber(Subscriber):
                 fulfiled_orders.append(order['id'])
             # mark the order as pending if part of it was processed
             elif remaining_volume < initial_volume:
-                pending_orders.append(order['id'])
+                partial_orders.append(order['id'])
             
             # clear the budget dataframe, so we won't push bad data to the database
             budget = budget.iloc[0:0]
@@ -329,12 +336,12 @@ class BrokerSubscriber(Subscriber):
         return (
             portfolio,
             currently_used,
-            pending_orders,
+            partial_orders,
             fulfiled_orders,
             budget
         )
 
-    def _save_changes(self, portfolio, currently_used, pending_orders, fulfiled_orders, budget):
+    def _save_changes(self, portfolio, currently_used, partial_orders, fulfiled_orders, budget):
         """
             Save all the changes to the database.
             
@@ -342,8 +349,8 @@ class BrokerSubscriber(Subscriber):
             :type portfolio: pandas.DataFrame
             :param currently_used: A dataframe containg the transactions used to fulfil the new orders.
             :type currently_used: pandas.DataFrame
-            :param pending_orders: A list of order IDs for the orders that are still pending.
-            :type pending_orders: list
+            :param partial_orders: A list of order IDs for the orders that were partially processed.
+            :type partial_orders: list
             :param fulfiled_orders: A list of order IDs for the orders that are completed.
             :type fulfiled_orders: list
             :param budget: A dataframe with one row with the current budget, after transactions.
@@ -371,8 +378,8 @@ class BrokerSubscriber(Subscriber):
             method = 'multi'
         )
         db_schema.orders.update()\
-            .where(db_schema.orders.c.id in pending_orders)\
-            .values(status = OrderStatus.PENDING)
+            .where(db_schema.orders.c.id in partial_orders)\
+            .values(status = OrderStatus.PARTIAL)
         db_schema.orders.update()\
             .where(db_schema.orders.c.id in fulfiled_orders)\
             .values(status = OrderStatus.FULFILED)
