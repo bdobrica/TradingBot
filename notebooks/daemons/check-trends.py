@@ -100,7 +100,7 @@ class CheckTrendsSubscriber(Subscriber):
         volume = int(amount / orders['price'][0])
 
         orders.drop(columns = ['price', 'trend'], inplace = True)
-        orders['price'][0] = -volume
+        orders['volume'][0] = -volume
         
         return orders
     
@@ -127,7 +127,7 @@ class CheckTrendsSubscriber(Subscriber):
         
         trend_value, trend_type = self._trend()
         
-        orders = pd.DataFrame(columns = ['symbol', 'volume', 'trend'])
+        orders = pd.DataFrame(columns = ['symbol', 'volume', 'price', 'trend'])
         for symbol in transactions['symbol'].unique():
             symbol_transactions = transactions[transactions['symbol'] == symbol]
             if symbol_transactions.shape[0] < 3:

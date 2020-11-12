@@ -92,7 +92,7 @@ class CheckProfitSubscriber(Subscriber):
                 continue
             _, sell_price, sell_stamp = symbol_data
             
-            if buy_stamp + app_config.sell.cooldown >=  sell_stamp:
+            if buy_stamp + int(app_config.sell.cooldown) * 1000 >=  sell_stamp:
                 continue
             
             cogs = buy_value + commission
