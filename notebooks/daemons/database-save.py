@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 import datetime
-import logging
-import pika
+import pika # pylint: disable=import-error
 import json
 import pandas as pd
-from rabbitmq import Subscriber
-from config import app_config
-from db import DatabaseSchema
-from os import mkdir
+from rabbitmq import Subscriber # pylint: disable=import-error
+from config import app_config # pylint: disable=import-error
+from db import DatabaseSchema # pylint: disable=import-error
+from logger import Logger # pylint: disable=import-error
 from pathlib import Path
 
 from sqlalchemy import create_engine, MetaData
@@ -19,25 +18,16 @@ from sqlalchemy.sql.expression import Insert
 def _prefix_insert_with_ignore(insert, compiler, **kwords):
     return compiler.visit_insert(insert.prefix_with('IGNORE'), **kwords)
 
+# initialize the logger so we see what happens
+logger_path = Path(app_config.log.path)
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+
 # connect to the database and create the database schema
 meta = MetaData()
 db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
-
-# initialize the logger so we see what happens
-logging_path = Path(app_config.log.path)
-if not app_config.log.path.is_dir():
-    try:
-        mkdir(app_config.log.path)
-    except:
-        print('FATAL ERROR: Could not find or create the logging path: {}'.format(str(logging_path)))
-        sys.exit()
-logging.basicConfig(
-    filename = str(logging_path / Path(__file__).stem),
-    encoding = 'utf-8',
-    level = int(app_config.log.level)
-)
+logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
 class DbSubscriber(Subscriber):
     """
@@ -60,11 +50,11 @@ class DbSubscriber(Subscriber):
         # check if the message contains table_name and table_description
         body_object = json.loads(body)
         if 'table_name' not in body_object:
-            logging.debug('The message did not contain the table_name key.')
+            logger.debug('The message did not contain the table_name key.')
             return
         table_name = body_object['table_name']
         if 'table_desc' not in body_object:
-            logging.debug('The message did not contain the table_desc key.')
+            logger.debug('The message did not contain the table_desc key.')
             return
         table_desc = body_object['table_desc']
         
@@ -72,7 +62,7 @@ class DbSubscriber(Subscriber):
         try:
             df = pd.DataFrame.from_dict(table_desc)
         except:
-            logging.debug('The received dataframe data is corrupted and could not be converted to a valid dataframe.')
+            logger.debug('The received dataframe data is corrupted and could not be converted to a valid dataframe.')
             return
         
         # check if there's a stamp column, but not a time column and if so, create the time column
@@ -91,7 +81,7 @@ class DbSubscriber(Subscriber):
                 method = 'multi'
             )
         except:
-            logging.debug('Could not insert the received data in the database.')
+            logger.debug('Could not insert the received data in the database.')
 
 # configure the subscriber
 params = pika.ConnectionParameters(host='localhost')
@@ -107,5 +97,5 @@ if __name__ == '__main__':
         subscriber.run()
     # if it was pressed
     except KeyboardInterrupt:
-        logging.debug('Caught SIGINT. Cleaning up.')
+        logger.debug('Caught SIGINT. Cleaning up.')
         subscriber.stop()

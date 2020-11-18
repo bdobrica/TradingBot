@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 import json
-import logging
 import pandas as pd
-import pika
+import pika # pylint: disable=import-error
 import websocket
 import sys
-from config import app_config
-from os import mkdir
+from config import app_config # pylint: disable=import-error
+from logger import Logger # pylint: disable=import-error
 from pathlib import Path
-from rabbitmq import Publisher
+from rabbitmq import Publisher # pylint: disable=import-error
 
 # create the connection to RabbitMQ
 params = pika.ConnectionParameters(host='localhost')
@@ -21,18 +20,8 @@ publisher['routing_key'] = 'database.save'
 df = pd.DataFrame(columns = ['price', 'symbol', 'stamp', 'volume'])
 
 # initialize the logger so we see what happens
-logging_path = Path(app_config.log.path)
-if not app_config.log.path.is_dir():
-    try:
-        mkdir(app_config.log.path)
-    except:
-        print('FATAL ERROR: Could not find or create the logging path: {}'.format(str(logging_path)))
-        sys.exit()
-logging.basicConfig(
-    filename = str(logging_path / Path(__file__).stem),
-    encoding = 'utf-8',
-    level = int(app_config.log.level)
-)
+logger_path = Path(app_config.log.path)
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
 
 def on_message(ws, message):
     """
@@ -50,6 +39,9 @@ def on_message(ws, message):
     
     # get the JSON data
     json_data = json.loads(message)
+    if 'data' not in json_data:
+        return
+
     # iterate through stored transactions
     for item in json_data['data']:
         # append each-one to the dataframe
@@ -81,7 +73,7 @@ def on_error(ws, error):
         :param error: The error object.
         :type error:
     """
-    logging.error('An error occured while reading data from the websocket.')
+    logger.error('An error occured while reading data from the websocket.')
     
     # check if the dataframe buffer has any transactions
     if df.shape[0] > 0:
@@ -101,7 +93,7 @@ def on_close(ws):
         It doesn't do much, just sends buffered transactions (if any) to
         the Rabbit MQ queue.
     """
-    logging.error('The websocket was closed.')
+    logger.error('The websocket was closed.')
     
     # check if the dataframe buffer has any transactions
     if df.shape[0] > 0:
@@ -120,12 +112,12 @@ def on_open(ws):
         Callback function called by the websocket just after opening the connection.
         In this case, it just tells the API which traded symbols to look after.
     """
-    logging.debug('Initializing the websocket.')
+    logger.debug('Initializing the websocket.')
     
     # first, check that the config symbols path exists
     symbols_path = Path(app_config.symbols.path)
     if not symbols_path.is_dir():
-        logging.debug('You need to create the {} directory and populate it with symbols you\'re interested in.'.format(str(app_config.symbols.path)))
+        logger.debug('You need to create the {} directory and populate it with symbols you\'re interested in.'.format(str(app_config.symbols.path)))
         return
     
     # read all the files from the symbols path that should contain a JSON with the symbol name
@@ -141,14 +133,14 @@ def on_open(ws):
             continue
         if 'symbol' not in symbol_data:
             continue
-        symbols.append(symbols)
+        symbols.append(symbol_data['symbol'])
         
     # if there aren't symbols to watch, return
     if not symbols:
-        logging.debug('You need to add at least one symbol file with the correct structure in {}.'.format(str(app_config.symbols.path)))
+        logger.debug('You need to add at least one symbol file with the correct structure in {}.'.format(str(app_config.symbols.path)))
         return
     
-    logging.debug('Watching the following symbols: [{}].'.format(','.join(symbols)))
+    logger.debug('Watching the following symbols: [{}].'.format(','.join(symbols)))
     
     # else, subscribe the websocket to all the symbols' transactions
     for symbol in symbols:
@@ -173,7 +165,7 @@ if __name__ == '__main__':
         ws.run_forever()
     # if it was pressed
     except KeyboardInterrupt:
-        logging.debug('Caught SIGINT. Cleaning up.')
+        logger.debug('Caught SIGINT. Cleaning up.')
         
         # and the buffer dataframe has some transactions not sent,
         if df.shape[0] > 0:

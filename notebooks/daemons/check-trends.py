@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 import datetime
-import pika
 import json
-import pandas as pd
-from rabbitmq import Subscriber
-from rabbitmq import Publisher
-from config import app_config
-from db import DatabaseSchema, OrderStatus
-from sqlalchemy import create_engine, MetaData
 import numpy as np
+import pandas as pd
+import pika # pylint: disable=import-error
+from config import app_config # pylint: disable=import-error
+from db import DatabaseSchema, OrderStatus # pylint: disable=import-error
+from logger import Logger # pylint: disable=import-error
+from pathlib import Path
+from rabbitmq import Subscriber # pylint: disable=import-error
+from rabbitmq import Publisher # pylint: disable=import-error
+from sqlalchemy import create_engine, MetaData
 
+# initialize the logger so we see what happens
+logger_path = Path(app_config.log.path)
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+
+# connect to the database
 meta = MetaData()
 db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
+logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
 class CheckTrendsSubscriber(Subscriber):
     def __setitem__(self, key, value):
@@ -105,42 +113,58 @@ class CheckTrendsSubscriber(Subscriber):
         return orders
     
     def on_message_callback(self, basic_delivery, properties, body):
+        # received the check profit message. preprocessing it
+        logger.debug('Received check trends message.')
         body_object = json.loads(body)
         if 'stamp' not in body_object:
+            logger.warning('The check trends message does not contain a stamp.')
             return
         check_stamp = body_object['stamp']
         if 'active_orders' not in body_object:
+            logger.warning('The check trends message does not contain the active orders.')
             return
         active_orders = body_object['active_orders']
         if active_orders > 0:
+            logger.debug('There are active orders. Cannot compute accurate trends.')
             return
         if 'budget' not in body_object:
+            logger.warning('The check trends message does not contain the budget.')
             return
         budget = body_object['budget']
         if budget['amount'] <= 0:
+            logger.warning('The budget is negative: {budget}.'.format(budget = budget['amount']))
             return
         if 'transactions' not in body_object:
+            logger.warning('The check trends message does not contain transactions.')
             return
         transactions = pd.DataFrame.from_dict(body_object['transactions'])
         if transactions.shape[0] == 0:
+            logger.warning('There are no active transactions that can be used for computing the trends.')
             return
         
+        # retrieve the trends threshold
         trend_value, trend_type = self._trend()
-        
+        # create a template dataframe for orders
         orders = pd.DataFrame(columns = ['symbol', 'volume', 'price', 'trend'])
+        # iterate through the transactions' symbols
         for symbol in transactions['symbol'].unique():
+            # extract the transactions only for the current symbol
             symbol_transactions = transactions[transactions['symbol'] == symbol]
             if symbol_transactions.shape[0] < 3:
+                logger.debug('For symbol {symbol} there are fewer than 3 transactions. Cannot compute trends. Skipping.'.format(symbol = symbol))
                 continue
-            
+            # getting the average transaction price (weighted average)
             price = np.dot(
                 symbol_transactions['price'].values,
                 symbol_transactions['volume'].values
             ) / np.sum(symbol_transactions['volume'].values)
             
+            # compute the trends for the symbol
             absolute_trend, relative_trend = self._compute_trend(symbol_transactions)
             
+            # compare the compute trend with the threshold
             if trend_type == 'fixed' and absolute_trend > trend_value:
+                logger.debug('The symbol {symbol} is on a positive absolute trend.'.format(symbol = symbol))
                 orders = orders.append({
                     'symbol': symbol,
                     'volume': 0,
@@ -148,6 +172,7 @@ class CheckTrendsSubscriber(Subscriber):
                     'trend': absolute_trend
                 }, ignore_index = True)
             if trend_type == 'percent' and relative_trend > trend_value:
+                logger.debug('The symbol {symbol} is on a positive relative trend.'.format(symbol = symbol))
                 orders = orders.append({
                     'symbol': symbol,
                     'volume': 0,
@@ -155,18 +180,40 @@ class CheckTrendsSubscriber(Subscriber):
                     'trend': relative_trend
                 }, ignore_index = True)
         
+        # distribute the budget among the orders
+        logger.debug('Distributing the budget among the orders.')
         orders = self._distribute_budget(orders, budget)
+        
+        # check if there are still orders
         orders = orders[orders['volume'] < 0]
         if orders.shape[0] > 0:
+            logger.debug('There are potential orders. Passing them for fulfilment.')
             self._make_buy_orders(orders)
-            
+
+# initialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 subscriber = CheckTrendsSubscriber(params)
 subscriber['queue'] = 'requested'
 subscriber['routing_key'] = 'requested.trends'
+logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
+    queue = subscriber['queue'],
+    routing_key = subscriber['routing_key']
+))
+# initializing the Rabbit MQ publisher to reply to requests
 publisher = Publisher(params)
 publisher['queue'] = 'orders'
+logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
+# bind the publisher to the subscriber
 subscriber['publisher'] = publisher
 
+# as this is a script that's intended to be run stand alone, not to be imported
+# check whether the script is called directly
 if __name__ == '__main__':
-    subscriber.run()
+    # if so, subscribe to the queue and run continuously,
+    # but be aware if CTRL+C is pressed
+    try:
+        logger.debug('Subscribing to the Rabbit MQ.')
+        subscriber.run()
+    # if it was pressed
+    except KeyboardInterrupt:
+        logger.debug('Caught SIGINT. Cleaning up.')

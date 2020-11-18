@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import datetime
-import pika
+import pika # pylint: disable=import-error
 import json
 import pandas as pd
-from rabbitmq import Subscriber
-from rabbitmq import Publisher
-from config import app_config
-from db import DatabaseSchema, OrderStatus
-
+from config import app_config # pylint: disable=import-error
+from db import DatabaseSchema, OrderStatus # pylint: disable=import-error
+from logger import Logger # pylint: disable=import-error
+from pathlib import Path
+from rabbitmq import Subscriber # pylint: disable=import-error
+from rabbitmq import Publisher # pylint: disable=import-error
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.expression import Insert
@@ -17,10 +18,16 @@ from sqlalchemy.sql.expression import Insert
 def _prefix_insert_with_ignore(insert, compiler, **kwords):
     return compiler.visit_insert(insert.prefix_with('IGNORE'), **kwords)
 
+# initialize the logger so we see what happens
+logger_path = Path(app_config.log.path)
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+
+# connect to the database
 meta = MetaData()
 db_schema = DatabaseSchema(meta)
 engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 meta.create_all(engine)
+logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
 class BrokerSubscriber(Subscriber):
     def _lock(self):
@@ -386,37 +393,64 @@ class BrokerSubscriber(Subscriber):
         
     
     def on_message_callback(self, basic_delivery, properties, body):
+        # received the check orders message. preprocessing it
+        logger.debug('Received check orders message.')
         body_object = json.loads(body)
         if 'stamp' not in body_object:
+            logger.warning('The check orders message does not contain a stamp.')
             return
         check_stamp = body_object['stamp']
         if 'lookahead' not in body_object:
+            logger.warning('The check orders message does not contain the lookahead time.')
             return
         lookahead = body_object['lookahead']
         
         if self._is_locked():
+            logger.warning('The orders were previously locked. Skipping.')
             return
         
         self._lock()
+        logger.debug('The orders are currently locked.')
         
+        logger.debug('Retrieving the active orderds.')
         orders = self._get_active_orders(lookahead)
         
         if orders[0].shape[0] < 1:
+            logger.debug('No active orders right now. Unlocking orders and skipping.')
             self._unlock()
             return
         
+        logger.debug('Matching the active orders to the transactions.')
         matched = self._match_orders_to_transactions(*orders)
         
         if matched[1].shape[0] < 1:
+            logger.debug('Could not match any orders to transactions. Unlocking orders and skipping.')
+            self._unlock()
             return
             
+        logger.debug('Saving changes.')
         self._save_changes(*matched)
+        logger.debug('Unlocking orders.')
+        self._unlock()
         
-        
+# initialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 subscriber = BrokerSubscriber(params)
 subscriber['queue'] = 'orders'
 subscriber['routing_key'] = 'orders.make'
+logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
+    queue = subscriber['queue'],
+    routing_key = subscriber['routing_key']
+))
 
+# as this is a script that's intended to be run stand alone, not to be imported
+# check whether the script is called directly
 if __name__ == '__main__':
-    subscriber.run()
+    # if so, subscribe to the queue and run continuously,
+    # but be aware if CTRL+C is pressed
+    try:
+        logger.debug('Subscribing to the Rabbit MQ.')
+        subscriber.run()
+    # if it was pressed
+    except KeyboardInterrupt:
+        logger.debug('Caught SIGINT. Cleaning up.')
