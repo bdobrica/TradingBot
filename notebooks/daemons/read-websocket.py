@@ -8,6 +8,7 @@ from config import app_config # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path
 from rabbitmq import Publisher # pylint: disable=import-error
+from time import sleep
 
 # create the connection to RabbitMQ
 params = pika.ConnectionParameters(host='localhost')
@@ -152,17 +153,25 @@ def on_open(ws):
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
 if __name__ == '__main__':
-    # if so, initialize a websocket client and connect the proper callbacks
     websocket.enableTrace(False)
-    ws = websocket.WebSocketApp(
-        'wss://ws.finnhub.io?token={api.token}'.format(api = app_config.api),
-        on_message = on_message,
-        on_error = on_error,
-        on_close = on_close)
-    ws.on_open = on_open
-    # and make it run continuously, but be aware if CTRL+C is pressed
+    # make it run continuously, but be aware if CTRL+C is pressed
     try:
-        ws.run_forever()
+        while True:
+            # initialize a websocket client and connect the proper callbacks
+            logger.debug('Initializing websocket.')
+            ws = websocket.WebSocketApp(
+                'wss://ws.finnhub.io?token={api.token}'.format(api = app_config.api),
+                on_message = on_message,
+                on_error = on_error,
+                on_close = on_close)
+            ws.on_open = on_open
+            # run continuously
+            ws.run_forever()
+            logger.warning('The websocket client exited. Waiting {respawn} seconds and trying to respawn.'.format(respawn = app_config.api.respawn))
+            # but sometimes, the socket can close itself. so clean first
+            del ws
+            # then wait, and respawn
+            sleep(int(app_config.api.respawn))
     # if it was pressed
     except KeyboardInterrupt:
         logger.debug('Caught SIGINT. Cleaning up.')
