@@ -31,7 +31,7 @@ class CheckTrendsSubscriber(Subscriber):
         if key == 'publisher':
             return self.publisher
         else:
-            super().__getitem__(key)
+            return super().__getitem__(key)
     
     def _make_buy_order(self, orders):
         current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
