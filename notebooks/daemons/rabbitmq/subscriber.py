@@ -24,7 +24,7 @@ class Subscriber:
         self._subscriber_tag = None
     
     def log(self, *args, **kwargs):
-        #print(*args, **kwargs)
+        print(*args, **kwargs)
         pass
     
     def __setitem__(self, key, value):
