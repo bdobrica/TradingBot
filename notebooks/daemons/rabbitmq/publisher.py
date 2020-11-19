@@ -27,7 +27,7 @@ class Publisher:
         self._stopping = False
     
     def log(self, *args, **kwargs):
-        #print(*args, **kwargs)
+        print(*args, **kwargs)
         pass
 
     def __setitem__(self, key, value):
@@ -38,6 +38,10 @@ class Publisher:
             self.exchange_type = value
         elif key == 'queue':
             self.queue = value
+            if self._channel is not None:
+                self._channel.queue_declare(
+                    queue = self.queue
+                )
         elif key == 'routing_key':
             self.routing_key = value
         else:
