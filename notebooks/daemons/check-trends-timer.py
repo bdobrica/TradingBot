@@ -7,12 +7,12 @@ from rabbitmq import Publisher # pylint: disable=import-error
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # intialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 publisher = Publisher(params)
-publisher['queue'] = 'database'
+publisher['queue'] = 'database_read'
 publisher['routing_key'] = 'database.read'
 logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
     queue = publisher['queue'],
