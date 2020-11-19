@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, MetaData
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # connect to the database
 meta = MetaData()
@@ -34,7 +34,7 @@ class CheckTrendsSubscriber(Subscriber):
         if key == 'publisher':
             return self.publisher
         else:
-            super().__getitem__(key)
+            return super().__getitem__(key)
             
     def _trend(self):
         trend_type = 'fixed'
@@ -100,12 +100,15 @@ class CheckTrendsSubscriber(Subscriber):
         
     def _distribute_budget(self, orders, budget):
         amount = budget['amount']
-        if orders.shape[0]:
-            return
+        if orders is None or orders.shape[0] < 1:
+            logger.debug('There are no potential orders to distribute budget.')
+            return orders
         max_trend = orders['trend'].max()
         orders = orders[orders['trend'] == max_trend]
         orders = orders.iloc[0:1]
         volume = int(amount / orders['price'][0])
+
+        logger.debug('Decided to buy symbol {volume} x {symbol} @ {price}.'.format(symbol = orders['symbol'][0], volume = volume, price = orders['price'][0]))
 
         orders.drop(columns = ['price', 'trend'], inplace = True)
         orders['volume'][0] = -volume
@@ -193,7 +196,7 @@ class CheckTrendsSubscriber(Subscriber):
 # initialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 subscriber = CheckTrendsSubscriber(params)
-subscriber['queue'] = 'requested'
+subscriber['queue'] = 'requested_trends'
 subscriber['routing_key'] = 'requested.trends'
 logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
     queue = subscriber['queue'],
@@ -201,7 +204,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 ))
 # initializing the Rabbit MQ publisher to reply to requests
 publisher = Publisher(params)
-publisher['queue'] = 'orders'
+publisher['queue'] = 'orders_make'
 logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
 # bind the publisher to the subscriber
 subscriber['publisher'] = publisher
