@@ -20,7 +20,7 @@ def _prefix_insert_with_ignore(insert, compiler, **kwords):
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # connect to the database and create the database schema
 meta = MetaData()
@@ -86,7 +86,7 @@ class DbSubscriber(Subscriber):
 # configure the subscriber
 params = pika.ConnectionParameters(host='localhost')
 subscriber = DbSubscriber(params)
-subscriber['queue'] = 'database'
+subscriber['queue'] = 'database_save'
 subscriber['routing_key'] = 'database.save'
 
 # as this is a script that's intended to be run stand alone, not to be imported
