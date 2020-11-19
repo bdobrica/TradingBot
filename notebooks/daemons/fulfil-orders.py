@@ -20,7 +20,7 @@ def _prefix_insert_with_ignore(insert, compiler, **kwords):
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # connect to the database
 meta = MetaData()
@@ -436,7 +436,7 @@ class BrokerSubscriber(Subscriber):
 # initialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 subscriber = BrokerSubscriber(params)
-subscriber['queue'] = 'orders'
+subscriber['queue'] = 'orders_make'
 subscriber['routing_key'] = 'orders.make'
 logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
     queue = subscriber['queue'],
