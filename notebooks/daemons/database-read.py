@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, MetaData
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # connect to the database and create the database schema
 meta = MetaData()
@@ -97,6 +97,18 @@ class DbSubscriber(Subscriber):
             stamp desc\
         limit 1;'.format(tables = db_schema),
             con = engine)
+        # if missing, add the default budget from config
+        if budget.shape[0] < 1:
+            budget = pd.DataFrame(columns = ['amount', 'stamp'])
+            budget['amount'] = [ float(app_config.broker.budget) ]
+            budget['stamp'] = [ current_stamp ]
+            budget.to_sql(
+                name = db_schema.BUDGET,
+                con = engine,
+                if_exists = 'append',
+                index = False,
+                method = 'multi'
+            )
         # retrieve the current portfolio
         portfolio = pd.read_sql('select\
             symbol,\
@@ -128,15 +140,16 @@ class DbSubscriber(Subscriber):
         # create the message that will be passed back on the Rabbit MQ
         message = {
             'stamp': current_stamp,
-            'active_orders': orders['active_orders'][0],
+            'active_orders': int(orders['active_orders'][0]),
             'budget': {
-                'amount': budget['amount'][0],
-                'stamp': budget['stamp'][0]
+                'amount': float(budget['amount'][0]) if budget.shape[0] > 0 else 0.0,
+                'stamp': int(budget['stamp'][0]) if budget.shape[0] > 0 else current_stamp
             },
             'portfolio': portfolio.to_dict(),
             'prices': prices.to_dict()
         }
         # set the routing key for this message
+        self.publisher['queue'] = 'requested_profit'
         self.publisher['routing_key'] = 'requested.profit'
         self.publisher.publish(message)
         
@@ -172,7 +185,7 @@ class DbSubscriber(Subscriber):
                 'status': [OrderStatus.PENDING, OrderStatus.PARTIAL]
             }
         )
-        # get the budget
+        # retrieve the last budget record
         budget = pd.read_sql('select\
             amount,\
             stamp\
@@ -182,6 +195,18 @@ class DbSubscriber(Subscriber):
             stamp desc\
         limit 1;'.format(tables = db_schema),
             con = engine)
+        # if missing, add the default budget from config
+        if budget.shape[0] < 1:
+            budget = pd.DataFrame(columns = ['amount', 'stamp'])
+            budget['amount'] = [ float(app_config.broker.budget) ]
+            budget['stamp'] = [ current_stamp ]
+            budget.to_sql(
+                name = db_schema.BUDGET,
+                con = engine,
+                if_exists = 'append',
+                index = False,
+                method = 'multi'
+            )
         # get the transaction history
         transactions = pd.read_sql('select\
             id,\
@@ -203,14 +228,16 @@ class DbSubscriber(Subscriber):
         # create the message that will be pushed back to Rabbit MQ
         message = {
             'stamp': current_stamp,
-            'active_orders': orders['active_orders'][0],
+            'active_orders': int(orders['active_orders'][0]),
             'budget': {
-                'amount': budget['amount'][0],
-                'stamp': budget['stamp'][0]
+                'amount': float(budget['amount'][0]) if budget.shape[0] > 0 else 0.0,
+                'stamp': int(budget['stamp'][0]) if budget.shape[0] > 0 else current_stamp
             },
             'transactions': transactions.to_dict()
         }
+
         # set the routing key to requested.trends
+        self.publisher['queue'] = 'requested_trends'
         self.publisher['routing_key'] = 'requested.trends'
         self.publisher.publish(message)
     
@@ -270,6 +297,7 @@ class DbSubscriber(Subscriber):
             'orders': orders.to_dict(),
             'transactions': transactions.to_dict()
         }
+        self.publisher['queue'] = 'requested_orders'
         self.publisher['routing_key'] = 'requested.orders'
         self.publisher.publish(message)
     
@@ -281,7 +309,7 @@ class DbSubscriber(Subscriber):
         """
         body_object = json.loads(body)
         if 'type' not in body_object:
-            logger.debug('The type key is not present in the message body.')
+            logger.debug('The type key is not present in the message body: {message}.'.format(message = body))
             return
         request_type = body_object['type']
         if 'params' in body_object:
@@ -314,7 +342,7 @@ class DbSubscriber(Subscriber):
 # configure the subscriber
 params = pika.ConnectionParameters(host='localhost')
 subscriber = DbSubscriber(params)
-subscriber['queue'] = 'database'
+subscriber['queue'] = 'database_read'
 subscriber['routing_key'] = 'database.read'
 # bind a publisher to the subscriber
 publisher = Publisher(params)
