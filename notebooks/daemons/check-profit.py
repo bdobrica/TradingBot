@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, MetaData
 
 # initialize the logger so we see what happens
 logger_path = Path(app_config.log.path)
-logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.levels))
+logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config.log.level))
 
 # connect to the database
 meta = MetaData()
@@ -33,7 +33,7 @@ class CheckProfitSubscriber(Subscriber):
         if key == 'publisher':
             return self.publisher
         else:
-            super().__getitem__(key)
+            return super().__getitem__(key)
     
     def _margin(self):
         margin_type = 'fixed'
@@ -138,7 +138,7 @@ class CheckProfitSubscriber(Subscriber):
 # initialize the Rabbit MQ connection
 params = pika.ConnectionParameters(host='localhost')
 subscriber = CheckProfitSubscriber(params)
-subscriber['queue'] = 'requested'
+subscriber['queue'] = 'requested_profit'
 subscriber['routing_key'] = 'requested.profit'
 logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing key = {routing_key}.'.format(
     queue = subscriber['queue'],
@@ -146,7 +146,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 ))
 # initializing the Rabbit MQ publisher to reply to requests
 publisher = Publisher(params)
-publisher['queue'] = 'orders'
+publisher['queue'] = 'orders_make'
 logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
 # bind the publisher to the subscriber
 subscriber['publisher'] = publisher
