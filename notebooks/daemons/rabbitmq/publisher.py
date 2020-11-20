@@ -27,7 +27,7 @@ class Publisher:
         self._stopping = False
     
     def log(self, *args, **kwargs):
-        print(*args, **kwargs)
+        print('PUBLISHER:', *args, **kwargs)
         pass
 
     def __setitem__(self, key, value):
