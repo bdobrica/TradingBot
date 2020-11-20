@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import pika # pylint: disable=import-error
 from config import app_config # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
@@ -19,12 +20,12 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
     routing_key = publisher['routing_key']
 ))
 
+current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp()) * 1000
+
 # send the Rabbit MQ message
 logger.debug('Sending check orders message.')
 publisher.publish({
-    'type': 'orders',
-    'params': {
-        'lookahead': int(app_config.orders.lookahead)
-    }
+    'stamp': current_stamp,
+    'lookahead': int(app_config.orders.lookahead)
 })
 logger.debug('Sent check orders message.')
