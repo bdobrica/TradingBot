@@ -10,9 +10,13 @@ from pathlib import Path
 from rabbitmq import Publisher # pylint: disable=import-error
 from time import sleep
 
+class ApiPublisher(Publisher):
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
 # create the connection to RabbitMQ
 params = pika.ConnectionParameters(host='localhost')
-publisher = Publisher(params)
+publisher = ApiPublisher(params)
 # the queue is "database", the routing key is "database.save"
 publisher['queue'] = 'database_save'
 publisher['routing_key'] = 'database.save'
