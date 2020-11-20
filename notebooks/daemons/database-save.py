@@ -33,6 +33,9 @@ class DbSubscriber(Subscriber):
     """
         DbSubscriber extends the Subscriber class to allow message processing and inserting data into the database.
     """
+
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
     
     def on_message_callback(self, basic_delivery, properties, body):
         """
@@ -93,9 +96,6 @@ subscriber['routing_key'] = 'database.save'
 # check whether the script is called directly
 if __name__ == '__main__':
     # and make it run continuously, but be aware if CTRL+C is pressed
-    try:
-        subscriber.run()
-    # if it was pressed
-    except KeyboardInterrupt:
-        logger.debug('Caught SIGINT. Cleaning up.')
-        subscriber.stop()
+    # that's why we daemonize it =)
+    logger.debug('Subscribing to Rabbit MQ with a daemon.')
+    subscriber.daemonize()
