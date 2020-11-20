@@ -147,10 +147,10 @@ class DbSubscriber(Subscriber):
         # create the message that will be passed back on the Rabbit MQ
         message = {
             'stamp': current_stamp,
-            'active_orders': int(orders['active_orders'][0]),
+            'active_orders': int(orders['active_orders'].iloc[0]),
             'budget': {
-                'amount': float(budget['amount'][0]) if budget.shape[0] > 0 else 0.0,
-                'stamp': int(budget['stamp'][0]) if budget.shape[0] > 0 else current_stamp
+                'amount': float(budget['amount'].iloc[0]) if budget.shape[0] > 0 else 0.0,
+                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else current_stamp
             },
             'portfolio': portfolio.to_dict(),
             'prices': prices.to_dict()
@@ -235,10 +235,10 @@ class DbSubscriber(Subscriber):
         # create the message that will be pushed back to Rabbit MQ
         message = {
             'stamp': current_stamp,
-            'active_orders': int(orders['active_orders'][0]),
+            'active_orders': int(orders['active_orders'].iloc[0]),
             'budget': {
-                'amount': float(budget['amount'][0]) if budget.shape[0] > 0 else 0.0,
-                'stamp': int(budget['stamp'][0]) if budget.shape[0] > 0 else current_stamp
+                'amount': float(budget['amount'].iloc[0]) if budget.shape[0] > 0 else 0.0,
+                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else current_stamp
             },
             'transactions': transactions.to_dict()
         }
