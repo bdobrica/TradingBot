@@ -66,14 +66,15 @@ class CheckTrendsSubscriber(Subscriber):
             trend_type
         )
     
-    def _make_buy_order(self, orders):
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
+    def _make_buy_orders(self, orders):
+        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp()) * 1000
+        orders['stamp'] = orders.shape[0] * [ current_stamp ]
+        orders['status'] = orders.shape[0] * [ OrderStatus.PENDING ] 
         message = {
-            'stamp': current_stamp,
-            'type': 'buy',
-            'orders': orders.to_dict()
+            'table_name': DatabaseSchema.ORDERS,
+            'table_desc': orders.to_dict()
         }
-        self.publisher['routing_key'] = 'orders.make'
+        self.publisher['routing_key'] = 'database.save'
         self.publisher.publish(message)
     
     def _compute_trend(self, transactions):
@@ -113,12 +114,12 @@ class CheckTrendsSubscriber(Subscriber):
         max_trend = orders['trend'].max()
         orders = orders[orders['trend'] == max_trend]
         orders = orders.iloc[0:1]
-        volume = int(amount / orders['price'][0])
+        volume = int(amount / orders['price'].iloc[0])
 
-        logger.debug('Decided to buy symbol {volume} x {symbol} @ {price}.'.format(symbol = orders['symbol'][0], volume = volume, price = orders['price'][0]))
+        logger.debug('Decided to buy symbol {volume} x {symbol} @ {price}.'.format(symbol = orders['symbol'].iloc[0], volume = volume, price = orders['price'].iloc[0]))
 
-        orders.drop(columns = ['price', 'trend'], inplace = True)
-        orders['volume'][0] = -volume
+        orders.drop(columns = ['trend'], inplace = True)
+        orders['volume'].iloc[0] = -volume
         
         return orders
     
@@ -171,6 +172,11 @@ class CheckTrendsSubscriber(Subscriber):
             
             # compute the trends for the symbol
             absolute_trend, relative_trend = self._compute_trend(symbol_transactions)
+            logger.debug('The symbol {symbol} has {absolute_trend} / {relative_trend}%.'.format(
+                symbol = symbol,
+                absolute_trend = absolute_trend,
+                relative_trend = relative_trend
+                ))
             
             # compare the compute trend with the threshold
             if trend_type == 'fixed' and absolute_trend > trend_value:
@@ -211,7 +217,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 ))
 # initializing the Rabbit MQ publisher to reply to requests
 publisher = CheckTrendsPublisher(params)
-publisher['queue'] = 'orders_make'
+publisher['queue'] = 'database_save'
 logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
 # bind the publisher to the subscriber
 subscriber['publisher'] = publisher
