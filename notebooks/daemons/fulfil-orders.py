@@ -83,6 +83,11 @@ class BrokerSubscriber(Subscriber):
                     pass
         elif isinstance(app_config.broker.commission, (int, float)):
             commission_value = float(app_config.broker.commission)
+
+        logger.debug('Commission threshold is {value} of type {type}.'.format(
+            value = commission_value,
+            type = commission_type
+        ))
         
         return (
             commission_value,
@@ -177,7 +182,14 @@ class BrokerSubscriber(Subscriber):
                 'amount': float(app_config.broker.budget),
                 'stamp': int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
             }, ignore_index = True)
-            
+
+        logger.debug('Processing {orders} active orders, with {transactions} transactions from which {used} were used, given a budget {budget}.'.format(
+            orders = orders.shape[0],
+            transactions = transactions.shape[0],
+            used = used.shape[0],
+            budget = budget['amount'].iloc[0]
+        ))
+
         return (
             orders,
             transactions,
@@ -224,10 +236,10 @@ class BrokerSubscriber(Subscriber):
             'volume'
         ])
         
-        transactions.order_by('stamp')
+        transactions.sort_values(by = 'stamp')
         
         # retrieve the budget amount
-        budget_amount = budget['amount'][0]
+        budget_amount = budget['amount'].iloc[0]
         # the variation of the budget amount
         delta_budget = 0
         # the total commission paid to fulfil current orders
@@ -263,18 +275,29 @@ class BrokerSubscriber(Subscriber):
             filtered = transactions[transactions['symbol'] == symbol]
             # if we have none, go to the next order
             if filtered.shape[0] < 1:
+                logger.debug('For symbol {symbol} there are no potential transactions.'.format(
+                    symbol = symbol
+                ))
                 continue
+
+            logger.debug('For symbol {symbol} there are {transactions} potential transactions.'.format(
+                symbol = symbol,
+                transactions = filtered.shape[0]
+            ))
             
             # for each transaction mathing current symbol
             for _, transaction in filtered.iterrows():
                 # check the used dataframe to see if we still have volume that we didn't use to fulfil orders
                 unavailable_volume = 0
                 if transaction['id'] in used['transaction'].values:
-                    unavailable_volume = used[used['transaction'] == transaction['id']]['volume'][0]
+                    unavailable_volume = used[used['transaction'] == transaction['id']]['volume'].iloc[0]
                 # the available volume is the difference
                 available_volume = transaction['volume'] - unavailable_volume
                 # if we don't have any unused volume, go to the next transaction
                 if available_volume <= 0:
+                    logger.warning('All the transactions for {symbol} were used. Skipping.'.format(
+                        symbol = symbol
+                    ))
                     continue
                 # the volume we can use is the minimum volume between
                 # the one that we want to trade and the one that's available
@@ -298,6 +321,10 @@ class BrokerSubscriber(Subscriber):
                 # don't let a transaction consume all the budget
                 if budget_amount + delta_budget + volume_sign * value - commission < app_config.broker.reserve:
                     # if this happens, the order won't be fulfiled and go to the next order
+                    logger.warning('Processing the order for {symbol} will consume the reserve. Skipping.'.format(
+                        symbol = symbol
+                    ))
+                    remaining_volume = initial_volume
                     break
                 
                 # compute the variation in the budget
@@ -328,20 +355,39 @@ class BrokerSubscriber(Subscriber):
             # mark the order as fulfiled if there's no remaining volume
             # actually, remaining volume cannot be a negative number!
             if remaining_volume <= 0:
+                logger.debug('The {requested} orders for {symbol} were completely fulfiled.'.format(
+                    symbol = symbol,
+                    requested = initial_volume
+                ))
                 fulfiled_orders.append(order['id'])
             # mark the order as pending if part of it was processed
             elif remaining_volume < initial_volume:
+                logger.debug('The orders for {symbol} were partially fulfiled {fulfiled} from {requested}.'.format(
+                    symbol = symbol,
+                    fulfiled = initial_volume - remaining_volume,
+                    requested = initial_volume
+                ))
                 partial_orders.append(order['id'])
+            else:
+                logger.debug('The {requested} orders for {symbol} were not fulfiled.'.format(
+                    symbol = symbol,
+                    requested = initial_volume
+                ))
             
             # clear the budget dataframe, so we won't push bad data to the database
             budget = budget.iloc[0:0]
             # if there are transactions made
             if fulfiled_orders or remaining_volume:
+                budget_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
                 # add a new row to the budget log
                 budget = budget.append({
                     'amount': budget_amount + delta_budget,
-                    'stamp': int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+                    'time': datetime.datetime.utcfromtimestamp(budget_stamp),
+                    'stamp': int(budget_stamp * 1000)
                 }, ignore_index = True)
+                logger.debug('Updating budget to {budget}.'.format(
+                    budget = budget_amount + delta_budget
+                ))
                 
         return (
             portfolio,
@@ -366,6 +412,9 @@ class BrokerSubscriber(Subscriber):
             :param budget: A dataframe with one row with the current budget, after transactions.
             :type budget: pandas.DataFrame
         """
+        logger.debug('Adding {records} into portfolio.'.format(
+            records = portfolio.shape[0]
+        ))
         portfolio.to_sql(
             name = db_schema.PORTFOLIO,
             con = engine,
@@ -373,6 +422,9 @@ class BrokerSubscriber(Subscriber):
             index = False,
             method = 'multi'
         )
+        logger.debug('Adding {records} into used transactions.'.format(
+            records = currently_used.shape[0]
+        ))
         currently_used.to_sql(
             name = db_schema.USED,
             con = engine,
@@ -380,6 +432,9 @@ class BrokerSubscriber(Subscriber):
             index = False,
             method = 'multi'
         )
+        logger.debug('Adding {records} into budget.'.format(
+            records = budget.shape[0]
+        ))
         budget.to_sql(
             name = db_schema.BUDGET,
             con = engine,
@@ -387,6 +442,7 @@ class BrokerSubscriber(Subscriber):
             index = False,
             method = 'multi'
         )
+        logger.debug('Updating orders.')
         db_schema.orders.update()\
             .where(db_schema.orders.c.id in partial_orders)\
             .values(status = OrderStatus.PARTIAL)
@@ -399,14 +455,16 @@ class BrokerSubscriber(Subscriber):
         # received the check orders message. preprocessing it
         logger.debug('Received check orders message.')
         body_object = json.loads(body)
+
         if 'stamp' not in body_object:
             logger.warning('The check orders message does not contain a stamp.')
             return
         check_stamp = body_object['stamp']
         if 'lookahead' not in body_object:
-            logger.warning('The check orders message does not contain the lookahead time.')
-            return
-        lookahead = body_object['lookahead']
+            logger.debug('The check orders message does not contain the lookahead time. Using default.')
+            lookahead = int(app_config.orders.lookahead)
+        else:
+            lookahead = int(body_object['lookahead'])
         
         if self._is_locked():
             logger.warning('The orders were previously locked. Skipping.')
