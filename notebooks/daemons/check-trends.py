@@ -23,6 +23,10 @@ engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.
 meta.create_all(engine)
 logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
+class CheckTrendsPublisher(Publisher):
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
 class CheckTrendsSubscriber(Subscriber):
     def __setitem__(self, key, value):
         if key == 'publisher':
@@ -36,6 +40,9 @@ class CheckTrendsSubscriber(Subscriber):
         else:
             return super().__getitem__(key)
             
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
     def _trend(self):
         trend_type = 'fixed'
         trend_value = 0.0        
@@ -203,7 +210,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
     routing_key = subscriber['routing_key']
 ))
 # initializing the Rabbit MQ publisher to reply to requests
-publisher = Publisher(params)
+publisher = CheckTrendsPublisher(params)
 publisher['queue'] = 'orders_make'
 logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
 # bind the publisher to the subscriber
@@ -212,11 +219,7 @@ subscriber['publisher'] = publisher
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
 if __name__ == '__main__':
-    # if so, subscribe to the queue and run continuously,
-    # but be aware if CTRL+C is pressed
-    try:
-        logger.debug('Subscribing to the Rabbit MQ.')
-        subscriber.run()
-    # if it was pressed
-    except KeyboardInterrupt:
-        logger.debug('Caught SIGINT. Cleaning up.')
+    # and make it run continuously, but be aware if CTRL+C is pressed
+    # that's why we daemonize it =)
+    logger.debug('Subscribing to Rabbit MQ with a daemon.')
+    subscriber.daemonize()
