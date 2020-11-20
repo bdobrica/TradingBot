@@ -24,7 +24,7 @@ class Subscriber:
         self._subscriber_tag = None
     
     def log(self, *args, **kwargs):
-        print(*args, **kwargs)
+        print('SUBSCRIBER:', *args, **kwargs)
         pass
     
     def __setitem__(self, key, value):
@@ -174,11 +174,14 @@ class Subscriber:
             try:
                 self.run()
             except KeyboardInterrupt:
+                self.log('Caught SIGINT. Cleaning up.')
                 self.stop()
                 break
             if self.should_reconnect:
+                self.log('Trying to reconnect. First, clean up.')
                 self.stop()
                 self.get_reconnect_delay()
+                self.log('Awaiting for {seconds} seconds before restarting.'.format(seconds = self._reconnect_delay))
                 time.sleep(self._reconnect_delay)
                 
     def get_reconnect_delay(self):
