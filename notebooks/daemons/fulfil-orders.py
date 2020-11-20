@@ -30,6 +30,9 @@ meta.create_all(engine)
 logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
 class BrokerSubscriber(Subscriber):
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
     def _lock(self):
         """
             Prevents other broker subscribers to work on the database.
@@ -446,11 +449,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
 if __name__ == '__main__':
-    # if so, subscribe to the queue and run continuously,
-    # but be aware if CTRL+C is pressed
-    try:
-        logger.debug('Subscribing to the Rabbit MQ.')
-        subscriber.run()
-    # if it was pressed
-    except KeyboardInterrupt:
-        logger.debug('Caught SIGINT. Cleaning up.')
+    # and make it run continuously, but be aware if CTRL+C is pressed
+    # that's why we daemonize it =)
+    logger.debug('Subscribing to Rabbit MQ with a daemon.')
+    subscriber.daemonize()
