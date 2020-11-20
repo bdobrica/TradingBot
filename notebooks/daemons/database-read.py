@@ -23,6 +23,10 @@ engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.
 meta.create_all(engine)
 logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
+class DbPublisher(Publisher):
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
 class DbSubscriber(Subscriber):
     """
         DbSubscriber extends the Subscriber class to allow message processing,
@@ -58,6 +62,9 @@ class DbSubscriber(Subscriber):
         else:
             return super().__getitem__(key)
     
+    def log(self, *args, **kwargs):
+        super().log(Path(__file__).stem + ':', *args, **kwargs)
+
     def _send_profits(self):
         """
             Method that retrieves the profits and publishes them to Rabbit MQ.
@@ -345,7 +352,7 @@ subscriber = DbSubscriber(params)
 subscriber['queue'] = 'database_read'
 subscriber['routing_key'] = 'database.read'
 # bind a publisher to the subscriber
-publisher = Publisher(params)
+publisher = DbPublisher(params)
 publisher['queue'] = 'requested'
 subscriber['publisher'] = publisher
 
@@ -353,9 +360,6 @@ subscriber['publisher'] = publisher
 # check whether the script is called directly
 if __name__ == '__main__':
     # and make it run continuously, but be aware if CTRL+C is pressed
-    try:
-        subscriber.run()
-    # if it was pressed
-    except KeyboardInterrupt:
-        logger.debug('Caught SIGINT. Cleaning up.')
-        subscriber.stop()
+    # that's why we daemonize it =)
+    logger.debug('Subscribing to Rabbit MQ with a daemon.')
+    subscriber.daemonize()
