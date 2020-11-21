@@ -78,8 +78,6 @@ class DbSubscriber(Subscriber):
             All the data is put to dataframes and sent to requested queue with
             requested.profit routing key.
         """
-        # get the current timestamp
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
         # retrieve the PENDING and PARTIAL orders
         orders = pd.read_sql('select\
             count(*) as active_orders\
@@ -90,7 +88,7 @@ class DbSubscriber(Subscriber):
             status in %(status)s;'.format(tables = db_schema),
             con = engine,
             params = {
-                'stamp': current_stamp,
+                'stamp': self.current_stamp,
                 'status': [OrderStatus.PENDING, OrderStatus.PARTIAL]
             }
         )
@@ -106,9 +104,10 @@ class DbSubscriber(Subscriber):
             con = engine)
         # if missing, add the default budget from config
         if budget.shape[0] < 1:
-            budget = pd.DataFrame(columns = ['amount', 'stamp'])
+            budget = pd.DataFrame(columns = ['amount', 'stamp', 'time'])
             budget['amount'] = [ float(app_config.broker.budget) ]
-            budget['stamp'] = [ current_stamp ]
+            budget['stamp'] = [ self.current_stamp ]
+            budget['time'] = [ datetime.datetime.utcfromtimestamp(self.current_stamp // 1000) ]
             budget.to_sql(
                 name = db_schema.BUDGET,
                 con = engine,
@@ -146,11 +145,11 @@ class DbSubscriber(Subscriber):
             con = engine)
         # create the message that will be passed back on the Rabbit MQ
         message = {
-            'stamp': current_stamp,
+            'stamp': self.current_stamp,
             'active_orders': int(orders['active_orders'].iloc[0]),
             'budget': {
                 'amount': float(budget['amount'].iloc[0]) if budget.shape[0] > 0 else 0.0,
-                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else current_stamp
+                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else self.current_stamp
             },
             'portfolio': portfolio.to_dict(),
             'prices': prices.to_dict()
@@ -175,9 +174,8 @@ class DbSubscriber(Subscriber):
             :param lookbehind: The number of seconds to look in the transaction history.
             :type lookbehind: int
         """
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
-        begin_stamp = current_stamp - (lookbehind + lookahead) * 1000
-        end_stamp = current_stamp - lookahead * 1000
+        begin_stamp = self.current_stamp - (lookbehind + lookahead) * 1000
+        end_stamp = self.current_stamp - lookahead * 1000
         # get the list of PENDING and PARTIAL orders
         orders = pd.read_sql('select\
             count(1) as active_orders\
@@ -188,7 +186,7 @@ class DbSubscriber(Subscriber):
             status in %(status)s;'.format(tables = db_schema),
             con = engine,
             params = {
-                'stamp': current_stamp,
+                'stamp': self.current_stamp,
                 'status': [OrderStatus.PENDING, OrderStatus.PARTIAL]
             }
         )
@@ -204,9 +202,10 @@ class DbSubscriber(Subscriber):
             con = engine)
         # if missing, add the default budget from config
         if budget.shape[0] < 1:
-            budget = pd.DataFrame(columns = ['amount', 'stamp'])
+            budget = pd.DataFrame(columns = ['amount', 'stamp', 'time'])
             budget['amount'] = [ float(app_config.broker.budget) ]
-            budget['stamp'] = [ current_stamp ]
+            budget['stamp'] = [ self.current_stamp ]
+            budget['time'] = [ datetime.datetime.utcfromtimestamp(self.current_stamp // 1000) ]
             budget.to_sql(
                 name = db_schema.BUDGET,
                 con = engine,
@@ -234,11 +233,11 @@ class DbSubscriber(Subscriber):
         )
         # create the message that will be pushed back to Rabbit MQ
         message = {
-            'stamp': current_stamp,
+            'stamp': self.current_stamp,
             'active_orders': int(orders['active_orders'].iloc[0]),
             'budget': {
                 'amount': float(budget['amount'].iloc[0]) if budget.shape[0] > 0 else 0.0,
-                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else current_stamp
+                'stamp': int(budget['stamp'].iloc[0]) if budget.shape[0] > 0 else self.current_stamp
             },
             'transactions': transactions.to_dict()
         }
@@ -261,8 +260,7 @@ class DbSubscriber(Subscriber):
         """
         # first, substract the lookahead time from the current time,
         # cause this is the delay between a order is made and when it is processed
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
-        order_stamp = current_stamp - lookahead * 1000
+        order_stamp = self.current_stamp - lookahead * 1000
         # get the list of PENDING and PARTIAL orders
         orders = pd.read_sql('select\
             id,\
@@ -300,7 +298,7 @@ class DbSubscriber(Subscriber):
             }
         )
         message = {
-            'stamp': current_stamp,
+            'stamp': self.current_stamp,
             'orders': orders.to_dict(),
             'transactions': transactions.to_dict()
         }
@@ -319,6 +317,11 @@ class DbSubscriber(Subscriber):
             logger.debug('The type key is not present in the message body: {message}.'.format(message = body))
             return
         request_type = body_object['type']
+        if 'stamp' not in body_object:
+            self.current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+        else:
+            self.current_stamp = int(body_object['stamp'])
+
         if 'params' in body_object:
             params = body_object['params']
         else:
@@ -337,6 +340,7 @@ class DbSubscriber(Subscriber):
                 lookbehind = params['lookbehind']
             else:
                 lookbehind = 60 * 60
+            print('send trends')
             self._send_trends(lookahead, lookbehind)
         # if the type is orders, send the orders
         elif request_type == 'orders':
