@@ -35,7 +35,8 @@ class DbSubscriber(Subscriber):
     """
 
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
     
     def on_message_callback(self, basic_delivery, properties, body):
         """
