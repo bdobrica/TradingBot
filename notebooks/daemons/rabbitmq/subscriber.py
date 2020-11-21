@@ -148,8 +148,11 @@ class Subscriber:
             properties.app_id,
             body
         ))
-        self.on_message_callback(basic_delivery, properties, body)
-        self._channel.basic_ack(basic_delivery.delivery_tag)
+        try:
+            self.on_message_callback(basic_delivery, properties, body)
+            self._channel.basic_ack(basic_delivery.delivery_tag)
+        except Exception as error:
+            self.log('Processing the message raised: {}.'.format(error))
 
     def run(self):
         self.log('Starting the subscriber.')
