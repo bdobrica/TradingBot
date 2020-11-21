@@ -5,6 +5,7 @@ import pika # pylint: disable=import-error
 import websocket
 import sys
 from config import app_config # pylint: disable=import-error
+from db import DatabaseSchema # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path
 from rabbitmq import Publisher # pylint: disable=import-error
@@ -61,7 +62,7 @@ def on_message(ws, message):
     if df.shape[0] > int(app_config.api.buffer):
         # if so, prepare a message containing a JSON description of the dataframe
         message = {
-            'table_name': 'transactions',
+            'table_name': DatabaseSchema.TRANSACTIONS,
             'table_desc': df.to_dict()
         }
         # and publish the message
@@ -84,7 +85,7 @@ def on_error(ws, error):
     if df.shape[0] > 0:
         # if so, prepare a message containing the JSON description of the dataframe
         message = {
-            'table_name': 'transactions',
+            'table_name': DatabaseSchema.TRANSACTIONS,
             'table_desc': df.to_dict()
         }
         # send it to the queue
@@ -104,7 +105,7 @@ def on_close(ws):
     if df.shape[0] > 0:
         # if so, prepare a message containing the JSON description of the dataframe
         message = {
-            'table_name': 'transactions',
+            'table_name': DatabaseSchema.TRANSACTIONS,
             'table_desc': df.to_dict()
         }
         # send it to the queue
@@ -184,7 +185,7 @@ if __name__ == '__main__':
         if df.shape[0] > 0:
             # prepare a message containing the JSON description of the dataframe
             message = {
-                'table_name': 'transactions',
+                'table_name': DatabaseSchema.TRANSACTIONS,
                 'table_desc': df.to_dict()
             }
             # send it to the queue to not lose them
