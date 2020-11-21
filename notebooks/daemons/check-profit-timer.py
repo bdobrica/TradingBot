@@ -21,8 +21,12 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 
 # send the Rabbit MQ message
 logger.debug('Sending check profit message.')
+current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+#current_stamp = int(datetime.datetime(2020, 11, 20, 19, 00, 00, tzinfo = datetime.timezone.utc).timestamp() * 1000)
+
 publisher.publish({
     'type': 'profit',
+    'stamp': current_stamp,
     'params': {}
 })
 logger.debug('Sent check profit message.')
