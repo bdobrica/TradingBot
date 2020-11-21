@@ -1,5 +1,7 @@
 #!/usr/bin/env python
+import functools
 import pika
+import threading
 import time
 
 class Subscriber:
@@ -22,6 +24,8 @@ class Subscriber:
         self._closing = False
         self._consuming = False
         self._subscriber_tag = None
+
+        self._threads = []
     
     def log(self, *args, **kwargs):
         print('SUBSCRIBER:', *args, **kwargs)
@@ -141,6 +145,21 @@ class Subscriber:
             
     def on_message_callback(self, basic_delivery, properties, body):
         self.log('You should overload the on_message_callback callback.')
+
+    def safe_ack_message(self, delivery_tag):
+        if self._channel.is_open:
+            self._channel.basic_ack(delivery_tag)
+        else:
+            self.log('The channel is closed. Cannot acknowledge message.')
+
+    def on_message_threaded(self, basic_delivery, properties, body):
+        thread_id = threading.get_ident()
+        self.log('Thread id: {}'.format(thread_id))
+        try:
+            self.on_message_callback(basic_delivery, properties, body)
+            self.safe_ack_message(basic_delivery.delivery_tag)
+        except Exception as error:
+            self.log('Processing the message raised: {}.'.format(error))
     
     def on_message(self, _unused_channel, basic_delivery, properties, body):
         self.log('Received message # {} from {}: {}'.format(
@@ -148,11 +167,9 @@ class Subscriber:
             properties.app_id,
             body
         ))
-        try:
-            self.on_message_callback(basic_delivery, properties, body)
-            self._channel.basic_ack(basic_delivery.delivery_tag)
-        except Exception as error:
-            self.log('Processing the message raised: {}.'.format(error))
+        thread = threading.Thread(target = self.on_message_threaded, args = (basic_delivery, properties, body))
+        thread.start()
+        self._threads.append(thread)
 
     def run(self):
         self.log('Starting the subscriber.')
@@ -162,6 +179,9 @@ class Subscriber:
     def stop(self):
         if not self._closing:
             self._closing = True
+            self.log('Waiting for message threads to join.')
+            for thread in self._threads:
+                thread.join()
             self.log('Stopping the subscriber.')
             if self._consuming:
                 if self._channel:
