@@ -24,23 +24,13 @@ logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db
 
 class CheckProfitPublisher(Publisher):
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
 class CheckProfitSubscriber(Subscriber):
-    def __setitem__(self, key, value):
-        if key == 'publisher':
-            self.publisher = value
-        else:
-            super().__setitem__(key, value)
-    
-    def __getitem__(self, key):
-        if key == 'publisher':
-            return self.publisher
-        else:
-            return super().__getitem__(key)
-    
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
     def _margin(self):
         margin_type = 'fixed'
@@ -66,14 +56,20 @@ class CheckProfitSubscriber(Subscriber):
         )
     
     def _make_sell_order(self, orders):
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
+        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+        
+        orders['stamp'] = orders.shape[0] * [ current_stamp ]
+        orders['status'] = orders.shape[0] * [ OrderStatus.PENDING ] 
         message = {
-            'stamp': current_stamp,
-            'type': 'sell',
-            'orders': orders.to_dict()
+            'table_name': DatabaseSchema.ORDERS,
+            'table_desc': orders.to_dict()
         }
-        self.publisher['routing_key'] = 'orders.make'
-        self.publisher.publish(message)
+
+        publisher = CheckProfitPublisher(self.parameters)
+        publisher['queue'] = 'database_save'
+        publisher['routing_key'] = 'database.save'
+        publisher.publish(message)
+        publisher.disconnect()
     
     def on_message_callback(self, basic_delivery, properties, body):
         # received the check profit message. preprocessing it
@@ -87,7 +83,7 @@ class CheckProfitSubscriber(Subscriber):
             logger.warning('The check profit message does not contain the active orders.')
             return
         active_orders = body_object['active_orders']
-        if active_orders > 0:
+        if int(active_orders) > 0:
             logger.debug('There are active orders. Cannot compute accurate profit.')
             return
         if 'budget' not in body_object:
@@ -109,7 +105,7 @@ class CheckProfitSubscriber(Subscriber):
         # retrieve the margin threshold
         margin_value, margin_type = self._margin()
         # create a template dataframe for orders
-        orders = pd.DataFrame(columns = ['symbol', 'volume'])
+        orders = pd.DataFrame(columns = ['symbol', 'volume', 'price'])
         # iterate through the portfolio
         for _, row in portfolio.iterrows():
             # extract the parameters for each symbol
@@ -119,23 +115,29 @@ class CheckProfitSubscriber(Subscriber):
             if symbol_data.shape[0] == 0:
                 logger.debug('Could not find recent prices for the symbol {symbol}. Skipping.'.format(symbol = symbol))
                 continue
-            _, sell_price, sell_stamp = symbol_data
-            
+            _, sell_price, sell_stamp = symbol_data.iloc[0]
+           
             # check if the cooldown passed
-            if buy_stamp + int(app_config.sell.cooldown) * 1000 >=  sell_stamp:
+            if int(buy_stamp) + int(app_config.sell.cooldown) * 1000 >=  int(sell_stamp):
                 logger.debug('The symbol {symbol} was purchased less than {cooldown} seconds ago. Skipping.'.format(symbol = symbol, cooldown = app_config.sell.cooldown))
                 continue
             
-            cogs = buy_value + commission
-            sales = sell_price * volume
+            cogs = float(buy_value) + float(commission)
+            sales = float(sell_price) * float(volume)
             margin = (sales - cogs) / sales
+
+            logger.debug('The symbol {symbol} makes a profit of {margin}%.'.format(
+                symbol = symbol,
+                margin = int(margin * 10000) * 0.01
+            ))
             
             if (margin_type == 'fixed' and sales - cogs >= margin_value) or \
             (margin_type == 'percent' and margin >= margin_value):
                 logger.debug('The symbol {symbol} makes a profit above the set threshold.')
                 orders = orders.append({
                     'symbol': symbol,
-                    'volume': volume
+                    'volume': volume,
+                    'price': sell_price
                 }, ignore_index = True)
 
         if orders.shape[0] > 0:
@@ -151,12 +153,6 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
     queue = subscriber['queue'],
     routing_key = subscriber['routing_key']
 ))
-# initializing the Rabbit MQ publisher to reply to requests
-publisher = CheckProfitPublisher(params)
-publisher['queue'] = 'orders_make'
-logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
-# bind the publisher to the subscriber
-subscriber['publisher'] = publisher
 
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
