@@ -25,23 +25,13 @@ logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db
 
 class CheckTrendsPublisher(Publisher):
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
 class CheckTrendsSubscriber(Subscriber):
-    def __setitem__(self, key, value):
-        if key == 'publisher':
-            self.publisher = value
-        else:
-            super().__setitem__(key, value)
-    
-    def __getitem__(self, key):
-        if key == 'publisher':
-            return self.publisher
-        else:
-            return super().__getitem__(key)
-            
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
     def _trend(self):
         trend_type = 'fixed'
@@ -75,8 +65,11 @@ class CheckTrendsSubscriber(Subscriber):
             'table_name': DatabaseSchema.ORDERS,
             'table_desc': orders.to_dict()
         }
-        self.publisher['routing_key'] = 'database.save'
-        self.publisher.publish(message)
+        publisher = CheckTrendsPublisher(self.parameters)
+        publisher['queue'] = 'database_save'
+        publisher['routing_key'] = 'database.save'
+        publisher.publish(message)
+        publisher.disconnect()
     
     def _compute_trend(self, transactions):
         # extract the features
@@ -213,12 +206,6 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
     queue = subscriber['queue'],
     routing_key = subscriber['routing_key']
 ))
-# initializing the Rabbit MQ publisher to reply to requests
-publisher = CheckTrendsPublisher(params)
-publisher['queue'] = 'database_save'
-logger.debug('Setting the publisher queue to {queue}.'.format(queue = publisher['queue']))
-# bind the publisher to the subscriber
-subscriber['publisher'] = publisher
 
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
