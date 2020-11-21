@@ -25,45 +25,17 @@ logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db
 
 class DbPublisher(Publisher):
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
 class DbSubscriber(Subscriber):
     """
         DbSubscriber extends the Subscriber class to allow message processing,
         reading data from the database and publishing it back to the Rabbit MQ.
     """
-    def __setitem__(self, key, value):
-        """
-            Overloading the [] operator so "publisher" can be set for this object using the brackets.
-            
-            :param key: The name of the parameter to be set.
-            :type key: string
-            :param value:
-            :type value:
-        """
-        # set the publisher if the key is "publisher"
-        if key == 'publisher':
-            self.publisher = value
-        # else, just pass the parameters to the original []
-        else:
-            super().__setitem__(key, value)
-    
-    def __getitem__(self, key):
-        """
-            Overloading the [] operator so "publisher" can be get from this object using the brackets.
-            
-            :param key: The name of the parameter to be get.
-            :type key: string
-        """
-        # get the publisher if the key is "publisher"
-        if key == 'publisher':
-            return self.publisher
-        # else, just pass the parameters to the original []
-        else:
-            return super().__getitem__(key)
-    
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
     def _send_profits(self):
         """
@@ -119,8 +91,8 @@ class DbSubscriber(Subscriber):
         portfolio = pd.read_sql('select\
             symbol,\
             sum(commission) as commission,\
-            sum(price * volume) as value,\
-            sum(volume) as volume\
+            -sum(price * volume) as value,\
+            -sum(volume) as volume,\
             max(stamp) as stamp\
         from\
             {tables.PORTFOLIO}\
@@ -155,9 +127,11 @@ class DbSubscriber(Subscriber):
             'prices': prices.to_dict()
         }
         # set the routing key for this message
-        self.publisher['queue'] = 'requested_profit'
-        self.publisher['routing_key'] = 'requested.profit'
-        self.publisher.publish(message)
+        publisher = DbPublisher(self.parameters)
+        publisher['queue'] = 'requested_profit'
+        publisher['routing_key'] = 'requested.profit'
+        publisher.publish(message)
+        publisher.disconnect()
         
     def _send_trends(self, lookahead, lookbehind):
         """
@@ -243,68 +217,11 @@ class DbSubscriber(Subscriber):
         }
 
         # set the routing key to requested.trends
-        self.publisher['queue'] = 'requested_trends'
-        self.publisher['routing_key'] = 'requested.trends'
-        self.publisher.publish(message)
-    
-    def _send_orders(self, lookahead):
-        """
-            Method that retrieves the active orders and publishes them to Rabbit MQ.
-            To retrieve the orders:
-                - the active orders are retrieved;
-                - the transactions are retrieved looking back lookbehind seconds;
-            This way the active orders are matched to transactions.
-            
-            :param lookahead: The number of seconds it takes to process an order.
-            :type lookahead: int
-        """
-        # first, substract the lookahead time from the current time,
-        # cause this is the delay between a order is made and when it is processed
-        order_stamp = self.current_stamp - lookahead * 1000
-        # get the list of PENDING and PARTIAL orders
-        orders = pd.read_sql('select\
-            id,\
-            price,\
-            symbol,\
-            stamp,\
-            volume,\
-            status\
-        from\
-            {tables.ORDERS}\
-        where\
-            stamp <= %(stamp)s and\
-            status in %(status)s;'.format(tables = db_schema),
-            con = engine,
-            params = {
-                'stamp': order_stamp,
-                'status': [OrderStatus.PENDING, OrderStatus.PARTIAL]
-            }
-        )
-        begin_stamp = orders['stamp'].min()
-        # get the list of transactions that can fulfil the active orders
-        transactions = pd.read_sql('select\
-            id,\
-            price,\
-            symbol,\
-            stamp,\
-            volume\
-        from\
-            {tables.TRANSACTIONS}\
-        where\
-            stamp >= %(begin)s;'.format(tables = db_schema),
-            con = engine,
-            params = {
-                'begin': begin_stamp
-            }
-        )
-        message = {
-            'stamp': self.current_stamp,
-            'orders': orders.to_dict(),
-            'transactions': transactions.to_dict()
-        }
-        self.publisher['queue'] = 'requested_orders'
-        self.publisher['routing_key'] = 'requested.orders'
-        self.publisher.publish(message)
+        publisher = DbPublisher(self.parameters)
+        publisher['queue'] = 'requested_trends'
+        publisher['routing_key'] = 'requested.trends'
+        publisher.publish(message)
+        publisher.disconnect()
     
     def on_message_callback(self, basic_delivery, properties, body):
         """
@@ -340,25 +257,13 @@ class DbSubscriber(Subscriber):
                 lookbehind = params['lookbehind']
             else:
                 lookbehind = 60 * 60
-            print('send trends')
             self._send_trends(lookahead, lookbehind)
-        # if the type is orders, send the orders
-        elif request_type == 'orders':
-            if 'lookahead' in params:
-                lookahead = params['lookahead']
-            else:
-                lookahead = 15 * 60
-            self._send_orders(lookahead)
 
 # configure the subscriber
 params = pika.ConnectionParameters(host='localhost')
 subscriber = DbSubscriber(params)
 subscriber['queue'] = 'database_read'
 subscriber['routing_key'] = 'database.read'
-# bind a publisher to the subscriber
-publisher = DbPublisher(params)
-publisher['queue'] = 'requested'
-subscriber['publisher'] = publisher
 
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
