@@ -11,7 +11,7 @@ from rabbitmq import Subscriber # pylint: disable=import-error
 from rabbitmq import Publisher # pylint: disable=import-error
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.sql.expression import Insert
+from sqlalchemy.sql.expression import bindparam, Insert
 
 # adds the word IGNORE after INSERT in sqlalchemy
 @compiles(Insert)
@@ -114,8 +114,7 @@ class BrokerSubscriber(Subscriber):
                 dataframes.
             :rtype: tuple
         """
-        current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
-        order_stamp = current_stamp - lookahead * 1000
+        order_stamp = self.current_stamp - lookahead * 1000
         orders = pd.read_sql('select\
             id,\
             price,\
@@ -143,10 +142,12 @@ class BrokerSubscriber(Subscriber):
         from\
             {tables.TRANSACTIONS}\
         where\
-            stamp > %(stamp)s;'.format(tables = db_schema),
+            stamp > %(begin)s and\
+            stamp <= %(end)s;'.format(tables = db_schema),
             con = engine,
             params = {
-                'stamp': order_stamp
+                'begin': order_stamp,
+                'end': self.current_stamp
             }
         )
         used = pd.read_sql('select\
@@ -155,12 +156,14 @@ class BrokerSubscriber(Subscriber):
         from\
             {tables.USED}\
         where\
-            stamp > %(stamp)s\
+            stamp > %(begin)s and\
+            stamp <= %(end)s\
         group by\
             transaction;'.format(tables = db_schema),
             con = engine,
             params = {
-                'stamp': order_stamp
+                'begin': order_stamp,
+                'end': self.current_stamp
             }
         )
         budget = pd.read_sql('select\
@@ -180,7 +183,7 @@ class BrokerSubscriber(Subscriber):
             ])
             budget = budget.append({
                 'amount': float(app_config.broker.budget),
-                'stamp': int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+                'stamp': self.current_stamp
             }, ignore_index = True)
 
         logger.debug('Processing {orders} active orders, with {transactions} transactions from which {used} were used, given a budget {budget}.'.format(
@@ -244,10 +247,9 @@ class BrokerSubscriber(Subscriber):
         delta_budget = 0
         # the total commission paid to fulfil current orders
         commissions = 0
-        # the list of order IDs for orders that will be partially processed
-        partial_orders = []
-        # the list of order IDs for orders that are completely fulfiled
-        fulfiled_orders = []
+        # a list of orders to update, contains
+        # dictionaries with order_id, volume and status
+        update_orders = []
         
         # prepare the commission
         commission_value, commission_type = self._commission()
@@ -290,7 +292,9 @@ class BrokerSubscriber(Subscriber):
                 # check the used dataframe to see if we still have volume that we didn't use to fulfil orders
                 unavailable_volume = 0
                 if transaction['id'] in used['transaction'].values:
-                    unavailable_volume = used[used['transaction'] == transaction['id']]['volume'].iloc[0]
+                    unavailable_volume += used[used['transaction'] == transaction['id']]['volume'].sum()
+                if transaction['id'] in currently_used['transaction'].values:
+                    unavailable_volume += currently_used[currently_used['transaction'] == transaction['id']]['volume'].sum()
                 # the available volume is the difference
                 available_volume = transaction['volume'] - unavailable_volume
                 # if we don't have any unused volume, go to the next transaction
@@ -302,6 +306,10 @@ class BrokerSubscriber(Subscriber):
                 # the volume we can use is the minimum volume between
                 # the one that we want to trade and the one that's available
                 used_volume = min(available_volume, remaining_volume)
+                logger.debug('Using {volume} for symbol {symbol} orders.'.format(
+                    symbol = symbol,
+                    volume = used_volume
+                ))
                 # compute the remaining volume
                 remaining_volume -= used_volume
                 
@@ -319,12 +327,12 @@ class BrokerSubscriber(Subscriber):
                 commissions += commission
                 
                 # don't let a transaction consume all the budget
-                if budget_amount + delta_budget + volume_sign * value - commission < app_config.broker.reserve:
+                if budget_amount + delta_budget + volume_sign * value - commission < float(app_config.broker.reserve):
                     # if this happens, the order won't be fulfiled and go to the next order
                     logger.warning('Processing the order for {symbol} will consume the reserve. Skipping.'.format(
                         symbol = symbol
                     ))
-                    remaining_volume = initial_volume
+                    remaining_volume = abs(initial_volume)
                     break
                 
                 # compute the variation in the budget
@@ -359,15 +367,15 @@ class BrokerSubscriber(Subscriber):
                     symbol = symbol,
                     requested = initial_volume
                 ))
-                fulfiled_orders.append(order['id'])
+                update_orders.append({'order_id': order['id'], 'status': OrderStatus.FULFILED, 'volume': 0})
             # mark the order as pending if part of it was processed
-            elif remaining_volume < initial_volume:
+            elif remaining_volume < abs(initial_volume):
                 logger.debug('The orders for {symbol} were partially fulfiled {fulfiled} from {requested}.'.format(
                     symbol = symbol,
-                    fulfiled = initial_volume - remaining_volume,
-                    requested = initial_volume
+                    fulfiled = abs(initial_volume) - remaining_volume,
+                    requested = abs(initial_volume)
                 ))
-                partial_orders.append(order['id'])
+                update_orders.append({'order_id': order['id'], 'status': OrderStatus.PARTIAL, 'volume': volume_sign * remaining_volume})
             else:
                 logger.debug('The {requested} orders for {symbol} were not fulfiled.'.format(
                     symbol = symbol,
@@ -377,7 +385,7 @@ class BrokerSubscriber(Subscriber):
             # clear the budget dataframe, so we won't push bad data to the database
             budget = budget.iloc[0:0]
             # if there are transactions made
-            if fulfiled_orders or remaining_volume:
+            if update_orders:
                 budget_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp())
                 # add a new row to the budget log
                 budget = budget.append({
@@ -392,12 +400,11 @@ class BrokerSubscriber(Subscriber):
         return (
             portfolio,
             currently_used,
-            partial_orders,
-            fulfiled_orders,
+            update_orders,
             budget
         )
 
-    def _save_changes(self, portfolio, currently_used, partial_orders, fulfiled_orders, budget):
+    def _save_changes(self, portfolio, currently_used, update_orders, budget):
         """
             Save all the changes to the database.
             
@@ -442,14 +449,13 @@ class BrokerSubscriber(Subscriber):
             index = False,
             method = 'multi'
         )
-        logger.debug('Updating orders.')
-        db_schema.orders.update()\
-            .where(db_schema.orders.c.id in partial_orders)\
-            .values(status = OrderStatus.PARTIAL)
-        db_schema.orders.update()\
-            .where(db_schema.orders.c.id in fulfiled_orders)\
-            .values(status = OrderStatus.FULFILED)
-        
+        logger.debug('Updating orders {update_orders} as partial orders.'.format(
+            update_orders = ','.join(str(order['order_id']) for order in update_orders)
+        ))
+        stmt = db_schema.orders.update()\
+            .where(db_schema.orders.c.id == bindparam('order_id'))\
+            .values(status = bindparam('status'), volume = bindparam('volume'))
+        engine.execute(stmt, update_orders)
     
     def on_message_callback(self, basic_delivery, properties, body):
         # received the check orders message. preprocessing it
@@ -457,9 +463,10 @@ class BrokerSubscriber(Subscriber):
         body_object = json.loads(body)
 
         if 'stamp' not in body_object:
-            logger.warning('The check orders message does not contain a stamp.')
-            return
-        check_stamp = body_object['stamp']
+            self.current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp() * 1000)
+        else:
+            self.current_stamp = int(body_object['stamp'])
+
         if 'lookahead' not in body_object:
             logger.debug('The check orders message does not contain the lookahead time. Using default.')
             lookahead = int(app_config.orders.lookahead)
