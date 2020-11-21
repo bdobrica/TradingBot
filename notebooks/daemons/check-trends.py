@@ -70,6 +70,7 @@ class CheckTrendsSubscriber(Subscriber):
         current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp()) * 1000
         orders['stamp'] = orders.shape[0] * [ current_stamp ]
         orders['status'] = orders.shape[0] * [ OrderStatus.PENDING ] 
+        orders.drop(columns = ['trend'], inplace = True)
         message = {
             'table_name': DatabaseSchema.ORDERS,
             'table_desc': orders.to_dict()
@@ -112,15 +113,12 @@ class CheckTrendsSubscriber(Subscriber):
             logger.debug('There are no potential orders to distribute budget.')
             return orders
         max_trend = orders['trend'].max()
-        orders = orders[orders['trend'] == max_trend]
-        orders = orders.iloc[0:1]
+        orders = orders[orders['trend'] == max_trend].iloc[0:1]
         volume = int(amount / orders['price'].iloc[0])
 
         logger.debug('Decided to buy symbol {volume} x {symbol} @ {price}.'.format(symbol = orders['symbol'].iloc[0], volume = volume, price = orders['price'].iloc[0]))
 
-        orders.drop(columns = ['trend'], inplace = True)
         orders['volume'].iloc[0] = -volume
-        
         return orders
     
     def on_message_callback(self, basic_delivery, properties, body):
