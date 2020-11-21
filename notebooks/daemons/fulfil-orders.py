@@ -31,7 +31,8 @@ logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db
 
 class BrokerSubscriber(Subscriber):
     def log(self, *args, **kwargs):
-        super().log(Path(__file__).stem + ':', *args, **kwargs)
+        #super().log(Path(__file__).stem + ':', *args, **kwargs)
+        pass
 
     def _lock(self):
         """
@@ -422,6 +423,11 @@ class BrokerSubscriber(Subscriber):
         logger.debug('Adding {records} into portfolio.'.format(
             records = portfolio.shape[0]
         ))
+        
+        time_col = portfolio['stamp'].apply(lambda stamp : datetime.datetime.utcfromtimestamp(stamp // 1000))
+        time_pos = portfolio.columns.get_loc('stamp') + 1
+        portfolio.insert(time_pos, column = 'time', value = time_col)
+
         portfolio.to_sql(
             name = db_schema.PORTFOLIO,
             con = engine,
