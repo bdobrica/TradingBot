@@ -21,6 +21,7 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
 ))
 
 current_stamp = int(datetime.datetime.now(tz = datetime.timezone.utc).timestamp()) * 1000
+#current_stamp = int(datetime.datetime(2020, 11, 20, 19, 20, 00, tzinfo = datetime.timezone.utc).timestamp() * 1000)
 
 # send the Rabbit MQ message
 logger.debug('Sending check orders message.')
