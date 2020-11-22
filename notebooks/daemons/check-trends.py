@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pika # pylint: disable=import-error
 from config import app_config # pylint: disable=import-error
+from daemon import Daemon # pylint: disable=import-error
 from db import DatabaseSchema, OrderStatus # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path

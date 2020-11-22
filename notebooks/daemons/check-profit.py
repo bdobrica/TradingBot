@@ -4,6 +4,7 @@ import pika # pylint: disable=import-error
 import json
 import pandas as pd
 from config import app_config # pylint: disable=import-error
+from daemon import Daemon # pylint: disable=import-error
 from db import DatabaseSchema, OrderStatus # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path

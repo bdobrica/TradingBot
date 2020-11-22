@@ -3,11 +3,12 @@ import datetime
 import pika # pylint: disable=import-error
 import json
 import pandas as pd
-from rabbitmq import Subscriber # pylint: disable=import-error
 from config import app_config # pylint: disable=import-error
+from daemon import Daemon # pylint: disable=import-error
 from db import DatabaseSchema # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path
+from rabbitmq import Subscriber # pylint: disable=import-error
 
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.compiler import compiles
