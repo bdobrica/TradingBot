@@ -213,3 +213,4 @@ class Subscriber:
         else:
             self._reconnect_delay += 1
         self._reconnect_delay = min(self._reconnect_delay, self.max_reconnect_delay)
+        return self._reconnect_delay
