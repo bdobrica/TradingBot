@@ -5,6 +5,7 @@ import pika # pylint: disable=import-error
 import websocket
 import sys
 from config import app_config # pylint: disable=import-error
+from daemon import Daemon # pylint: disable=import-error
 from db import DatabaseSchema # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
 from pathlib import Path
@@ -154,13 +155,29 @@ def on_open(ws):
             'type': 'subscribe',
             'symbol': symbol
         }))
+
+class WebsocketDaemon(Daemon):
+    def atexit(self):
+        logger.debug('Websocket daemon exiting. Cleaning up.')
         
-# as this is a script that's intended to be run stand alone, not to be imported
-# check whether the script is called directly
-if __name__ == '__main__':
-    websocket.enableTrace(False)
-    # make it run continuously, but be aware if CTRL+C is pressed
-    try:
+        # and the buffer dataframe has some transactions not sent,
+        if df.shape[0] > 0:
+            # prepare a message containing the JSON description of the dataframe
+            message = {
+                'table_name': DatabaseSchema.TRANSACTIONS,
+                'table_desc': df.to_dict()
+            }
+            # send it to the queue to not lose them
+            publisher.publish(message)
+            # and then clean the dataframe
+            df.drop(df.index, inplace = True)
+            # and exit
+            sys.exit()
+        super().atexit()
+
+    def run(self):
+        # make it run continuously
+        websocket.enableTrace(False)
         while True:
             # initialize a websocket client and connect the proper callbacks
             logger.debug('Initializing websocket.')
@@ -177,20 +194,27 @@ if __name__ == '__main__':
             del ws
             # then wait, and respawn
             sleep(int(app_config.api.respawn))
-    # if it was pressed
-    except KeyboardInterrupt:
-        logger.debug('Caught SIGINT. Cleaning up.')
         
-        # and the buffer dataframe has some transactions not sent,
-        if df.shape[0] > 0:
-            # prepare a message containing the JSON description of the dataframe
-            message = {
-                'table_name': DatabaseSchema.TRANSACTIONS,
-                'table_desc': df.to_dict()
-            }
-            # send it to the queue to not lose them
-            publisher.publish(message)
-            # and then clean the dataframe
-            df.drop(df.index, inplace = True)
-            # and exit
-            sys.exit()
+# as this is a script that's intended to be run stand alone, not to be imported
+# check whether the script is called directly
+if __name__ == '__main__':
+    chroot = Path(__file__).absolute().parent
+    pidname = Path(__file__).stem + '.pid'
+    daemon = WebsocketDaemon(
+            pidfile = str((chroot / 'run') / pidname),
+            chroot = chroot
+    )
+    if len(sys.argv) == 2:
+        if sys.argv[1] == 'start':
+            daemon.start()
+        elif sys.argv[1] == 'stop':
+            daemon.stop()
+        elif sys.argv[1] == 'restart':
+            daemon.restart()
+        else:
+            print('Unknow command {command}.'.format(command = sys.argv[1]))
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        print('Usage: {command} start|stop|restart'.format(command = sys.argv[0]))
+        sys.exit(0)

@@ -154,10 +154,42 @@ logger.debug('Initialized the Rabbit MQ connection: queue = {queue} / routing ke
     routing_key = subscriber['routing_key']
 ))
 
+class CheckProfitDaemon(Daemon):
+    def atexit(self):
+        subscriber.stop()
+        super().atexit()
+
+    def run(self):
+        logger.debug('Subscribing to Rabbit MQ with a daemon.')
+        while True:
+            subscriber.run()
+            if subscriber.should_reconnect:
+                logger.debug('Trying to reconnect. First, clean up.')
+                subscriber.stop()
+                reconnect_delay = subscriber.get_reconnect_delay()
+                logger.debug('Awaiting for {seconds} seconds before restarting.'.format(seconds = self._reconnect_delay))
+                time.sleep(reconnect_delay)
+
 # as this is a script that's intended to be run stand alone, not to be imported
 # check whether the script is called directly
 if __name__ == '__main__':
-    # and make it run continuously, but be aware if CTRL+C is pressed
-    # that's why we daemonize it =)
-    logger.debug('Subscribing to Rabbit MQ with a daemon.')
-    subscriber.daemonize()
+    chroot = Path(__file__).absolute().parent
+    pidname = Path(__file__).stem + '.pid'
+    daemon = CheckProfitDaemon(
+            pidfile = str((chroot / 'run') / pidname),
+            chroot = chroot
+    )
+    if len(sys.argv) == 2:
+        if sys.argv[1] == 'start':
+            daemon.start()
+        elif sys.argv[1] == 'stop':
+            daemon.stop()
+        elif sys.argv[1] == 'restart':
+            daemon.restart()
+        else:
+            print('Unknow command {command}.'.format(command = sys.argv[1]))
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        print('Usage: {command} start|stop|restart'.format(command = sys.argv[0]))
+        sys.exit(0)
