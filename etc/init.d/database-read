@@ -1,0 +1,94 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:		database-read
+# Required-Start:	$remote_fs $syslog rabbitmq-server mysql
+# Required-Stop:	$remote_fs $syslog rabbitmq-server mysql
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	Database Read Service
+### END INIT INFO
+
+BOT_USER="pi"
+BOT_PATH="/home/pi/daemons/database-read.py"
+DIR_PATH="${BOT_PATH%/*}"
+CFG_PATH=""
+EXPECTED_OUTPUT="database-read.py"
+
+set -e
+
+run_cmd() {
+	if [ ! -z ${CFG_PATH} ]; then
+		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} --config=${CFG_PATH} $1"
+	else
+		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} $1"
+	fi
+}
+
+PROC_CTRL=${0##*/}
+
+# /etc/init.d/database-read: start and stop the Trading Bot daemon
+
+test -d ${DIR_PATH} || exit 0
+test -x ${BOT_PATH} || exit 0
+( run_cmd 2>&1 | grep -q "${EXPECTED_OUTPUT}" ) 2>/dev/null || exit 0
+
+umask 022
+
+if test -f ${DIR_PATH}/environment; then
+    . ${DIR_PATH}/environment
+fi
+. /lib/lsb/init-functions
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting Database Read Service" "${PROC_CTRL}" || true
+	if ( run_cmd $1 2>/dev/null ); then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+  stop)
+	log_daemon_msg "Stopping Database Read Service" "${PROC_CTRL}" || true
+	if ( run_cmd $1 2>/dev/null ); then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  reload|force-reload)
+	log_daemon_msg "Reloading Database Read Service configuration" "${PROC_CTRL}" || true
+	if ( run_cmd $1 2>/dev/null ); then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  restart)
+	log_daemon_msg "Restarting Database Read Service" "${PROC_CTRL}" || true
+	if ( run_cmd "stop" 2>/dev/null ); then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	if ( run_cmd "start" 2>/dev/null ); then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  status)
+	echo ${EXPECTED_OUTPUT}
+	#( ${EXEC_BIN} status 2>/dev/null ) && exit 0 || exit $?
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/${PROC_CTRL} {start|stop|reload|force-reload|restart|status}" || true
+	exit 1
+esac
+
+exit 0
