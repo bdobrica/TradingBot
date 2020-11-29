@@ -3,3 +3,4 @@ pandas
 sqlalchemy
 mysqlclient
 pika
+matplotlib
