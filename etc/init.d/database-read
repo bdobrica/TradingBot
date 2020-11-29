@@ -13,7 +13,7 @@ BOT_USER="pi"
 BOT_PATH="/home/pi/daemons/database-read.py"
 DIR_PATH="${BOT_PATH%/*}"
 CFG_PATH=""
-EXPECTED_OUTPUT="database-read.py"
+EXPECTED_OUTPUT="database-read"
 
 set -e
 
