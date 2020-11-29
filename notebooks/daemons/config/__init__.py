@@ -1,5 +1,6 @@
 from pathlib import Path
 from configparser import ConfigParser
+from sys import argv
 
 __all__ = [
     'app_config'
@@ -8,7 +9,14 @@ __all__ = [
 class Config(object):
     def __init__(self, config = None):
         if config is None:
-            config = Path(__file__).parent.absolute() / 'config.ini'
+            try:
+                config_arg_no = argv.index('--config') + 1
+                if config_arg_no < len(argv):
+                    config = Path(argv[config_arg_no]).absolute()
+                else:
+                    raise ValueError('Missing config file path after --config script parameter.')
+            except ValueError:
+                config = Path(__file__).parent.absolute() / 'config.ini'
         
         if isinstance(config, str):
             config = Path(str)
