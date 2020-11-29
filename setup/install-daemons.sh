@@ -13,7 +13,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable read-websocket
 sudo systemctl enable database-save
 sudo systemctl enable database-read
+sudo systemctl enable fulfil-orders
 
 sudo /etc/init.d/read-websocket start
 sudo /etc/init.d/database-save start
 sudo /etc/init.d/database-read start
+sudo /etc/init.d/fulfil-orders start
