@@ -5,7 +5,7 @@
 # Required-Start:	$remote_fs $syslog
 # Required-Stop:	$remote_fs $syslog
 # Default-Start:	2 3 4 5
-# Default-Stop:		
+# Default-Stop:		0 1 6
 # Short-Description:	Trading Bot server
 ### END INIT INFO
 
@@ -14,12 +14,13 @@ BOT_PATH="/home/pi/trading"
 DIR_PATH="${BOT_PATH%/*}"
 CFG_PATH=""
 EXPECTED_OUTPUT="Trading Bot"
+DAEMON_NAME="Trading Bot"
 
 set -e
 
 run_cmd() {
 	if test -f ${CFG_PATH}; then
-		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} --config=${CFG_PATH} $1"
+		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} --config ${CFG_PATH} $1"
 	else
 		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} $1"
 	fi
@@ -31,7 +32,7 @@ PROC_CTRL=${0##*/}
 
 test -d ${DIR_PATH} || exit 0
 test -x ${BOT_PATH} || exit 0
-( run_cmd "status" 2>&1 | grep -q "${EXPECTED_OUTPUT}" ) 2>/dev/null || exit 0
+( run_cmd 2>&1 | grep -q "${EXPECTED_OUTPUT}" ) 2>/dev/null || exit 0
 
 umask 022
 
@@ -42,7 +43,7 @@ fi
 
 case "$1" in
   start)
-	log_daemon_msg "Starting Trading Bot server" "${PROC_CTRL}" || true
+	log_daemon_msg "Starting ${DAEMON_NAME} service" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -50,7 +51,7 @@ case "$1" in
 	fi
 	;;
   stop)
-	log_daemon_msg "Stopping Trading Bot server" "${PROC_CTRL}" || true
+	log_daemon_msg "Stopping ${DAEMON_NAME} service" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -59,7 +60,7 @@ case "$1" in
 	;;
 
   reload|force-reload)
-	log_daemon_msg "Reloading Trading Bot server's configuration" "${PROC_CTRL}" || true
+	log_daemon_msg "Reloading ${DAEMON_NAME} service configuration" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -68,7 +69,7 @@ case "$1" in
 	;;
 
   restart)
-	log_daemon_msg "Restarting Trading Bot server" "${PROC_CTRL}" || true
+	log_daemon_msg "Restarting ${DAEMON_NAME} service" "${PROC_CTRL}" || true
 	if ( run_cmd "stop" 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
