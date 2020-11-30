@@ -204,12 +204,12 @@ if __name__ == '__main__':
             pidfile = str((chroot / 'run') / pidname),
             chroot = chroot
     )
-    if len(sys.argv) == 2:
-        if sys.argv[1] == 'start':
+    if len(sys.argv) >= 2:
+        if sys.argv[-1] == 'start':
             daemon.start()
-        elif sys.argv[1] == 'stop':
+        elif sys.argv[-1] == 'stop':
             daemon.stop()
-        elif sys.argv[1] == 'restart':
+        elif sys.argv[-1] == 'restart':
             daemon.restart()
         else:
             print('Unknow command {command}.'.format(command = sys.argv[1]))
