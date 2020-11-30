@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import pika # pylint: disable=import-error
 from config import app_config # pylint: disable=import-error
 from logger import Logger # pylint: disable=import-error
