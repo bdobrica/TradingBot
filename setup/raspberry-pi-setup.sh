@@ -52,13 +52,13 @@ sudo apt-get install -y vim               # a wicked text editor
 ## ESC        -> switch to view mode
 
 sudo apt-get install -y --upgrade python3 # the latest python version
+sudo apt-get install -y python3-pip       # python package manager
 sudo apt-get install -y mariadb-server    # mariadb database
 sudo apt-get install -y rabbitmq-server   # rabbitmq messaging queue
-sudo apt-get install -y python3-pip       # python package manager
 sudo apt-get install -y screen            # something that allows us to use multiple terminals in one
-sudo apt-get install libopenjp2-7 libtiff5 # required for matplotlib
-sudo apt-get install -y libf77blas        # a numeric library required for numpy
-sudo apt-get install gfortran libhdf5-dev libc-ares-dev libeigen3-dev libatlas-base-dev libopenblas-dev libblas-dev liblapack-dev cython # required for Tensorflow
+sudo apt-get install -y libopenjp2-7 libtiff5 # required for matplotlib
+#sudo apt-get install -y libf77blas        # a numeric library required for numpy
+sudo apt-get install -y gfortran libhdf5-dev libc-ares-dev libeigen3-dev libatlas-base-dev libopenblas-dev libblas-dev liblapack-dev cython # required for Tensorflow
 
 ## list of common shortcuts:
 ## CTRL+A, C                          -> create a new virtual window and move to it
@@ -97,14 +97,15 @@ mysql -u root -p
 sudo rabbitmq-plugins enable rabbitmq_management
 
 ## INSTALL TENSORFLOW ##
+sudo pip3 install --upgrade setuptools      # install requirements for Tensorflow
 sudo pip3 install keras tensorflow          # try to install keras and Tensorflow. it will fail, but it'll install required dependencies
 sudo pip3 uninstall tensorflow              # remove Tensorflow
 sudo pip3 install pybind11                  # install requirements for Tensorflow
 sudo pip3 install h5py                      # install requirements for Tensorflow
-sudo pip3 install --upgrade setuptools      # install requirements for Tensorflow
 sudo pip3 install gdown                     # install requirements for Tensorflow
 sudo gdown https://drive.google.com/uc?id=11mujzVaFqa7R1_lB7q0kVPW22Ol51MPg # download the Tensorflow 2.2.0 for ARM processors
 sudo -H pip3 install tensorflow-2.2.0-cp37-cp37m-linux_armv7l.whl # install TensorFlow 2.2.0 for ARM processors
+rm tensorflow-2.2.0-cp37-cp37m-linux_armv7l.whl # remove the TensorFlow installation package, as no longer needed
 
 ## THIS STARTS THE JUPYTER NOTEBOOK SERVER ON PORT 8888 ##
 jupyter notebook --no-browser --port=8888 -NotebookApp.allow_remote_access=1 &
@@ -113,3 +114,6 @@ jupyter notebook --no-browser --port=8888 -NotebookApp.allow_remote_access=1 &
 socat TCP6-LISTEN:8889,fork TCP4:127.0.0.1:8888 &
 
 ## YOU CAN USE THE run-jupyer.sh SCRIPT TO START THE JUPYTER NOTEBOOK IF NEEDED ##
+
+## REMEMBER TO INSTALL DEPENDENCIES ##
+sudo pip3 install -r requirements.txt
