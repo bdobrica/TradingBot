@@ -14,12 +14,13 @@ BOT_PATH="/home/pi/daemons/database-save.py"
 DIR_PATH="${BOT_PATH%/*}"
 CFG_PATH=""
 EXPECTED_OUTPUT="database-save"
+DAEMON_NAME="Database Save"
 
 set -e
 
 run_cmd() {
 	if [ ! -z ${CFG_PATH} ]; then
-		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} --config=${CFG_PATH} $1"
+		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} --config ${CFG_PATH} $1"
 	else
 		su ${BOT_USER} -c "cd ${DIR_PATH} && ${BOT_PATH} $1"
 	fi
@@ -42,7 +43,7 @@ fi
 
 case "$1" in
   start)
-	log_daemon_msg "Starting Database Save Service" "${PROC_CTRL}" || true
+	log_daemon_msg "Starting ${DAEMON_NAME} Service" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -50,7 +51,7 @@ case "$1" in
 	fi
 	;;
   stop)
-	log_daemon_msg "Stopping Database Save Service" "${PROC_CTRL}" || true
+	log_daemon_msg "Stopping ${DAEMON_NAME} Service" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -59,7 +60,7 @@ case "$1" in
 	;;
 
   reload|force-reload)
-	log_daemon_msg "Reloading Database Save Service configuration" "${PROC_CTRL}" || true
+	log_daemon_msg "Reloading ${DAEMON_NAME} Service configuration" "${PROC_CTRL}" || true
 	if ( run_cmd $1 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
@@ -68,7 +69,7 @@ case "$1" in
 	;;
 
   restart)
-	log_daemon_msg "Restarting Database Save Service" "${PROC_CTRL}" || true
+	log_daemon_msg "Restarting ${DAEMON_NAME} Service" "${PROC_CTRL}" || true
 	if ( run_cmd "stop" 2>/dev/null ); then
 	    log_end_msg 0 || true
 	else
