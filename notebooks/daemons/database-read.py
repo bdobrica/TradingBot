@@ -22,7 +22,7 @@ logger = Logger(path = logger_path / Path(__file__).stem, level = int(app_config
 # connect to the database and create the database schema
 meta = MetaData()
 db_schema = DatabaseSchema(meta)
-engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
+engine = create_engine('{db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db), pool_pre_ping = True)
 meta.create_all(engine)
 logger.debug('Connected to the database with URL {db.driver}://{db.username}:{db.password}@{db.host}/{db.database}'.format(db = app_config.db))
 
